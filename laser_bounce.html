@@ -1,0 +1,2902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liminal Laser Complex</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;600;800&display=swap');
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #0b0d10;
+            font-family: 'Inter', sans-serif; user-select: none;
+        }
+        #gameCanvas { display: block; width: 100%; height: 100%; }
+        .mono { font-family: 'Space Mono', monospace; }
+        input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; width: 100%; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 12px; width: 12px; border-radius: 50%;
+            background: #ef4444; cursor: pointer; margin-top: -4px; box-shadow: 0 0 6px rgba(239,68,68,0.8);
+        }
+        input[type=range]::-webkit-slider-runnable-track { height: 4px; cursor: pointer; background: rgba(255,255,255,0.25); border-radius: 2px; }
+        input[type=range]::-moz-range-thumb { height: 12px; width: 12px; border-radius: 50%; background: #ef4444; border: none; }
+        input[type=range]::-moz-range-track { height: 4px; background: rgba(255,255,255,0.25); border-radius: 2px; }
+        .weapon-slot { transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1); }
+        .weapon-slot.active {
+            transform: translateY(-6px) scale(1.05); border-color: #ef4444;
+            background-color: rgba(239,68,68,0.25); box-shadow: 0 4px 15px rgba(239,68,68,0.4);
+        }
+        .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+        .lbl { font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #d4d4d8; }
+        .val { font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 4px; background: rgba(0,0,0,0.45); }
+        .panel { background: rgba(0,0,0,0.66); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; }
+        .kbd { display: inline-block; min-width: 18px; text-align: center; font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
+               padding: 0 4px; border-radius: 4px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); color: #fff; }
+        .hk { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: #d4d4d8; line-height: 1.55; }
+        .hidden-ui { display: none !important; }
+        .switch { position: relative; width: 30px; height: 16px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch span { position: absolute; inset: 0; background: rgba(255,255,255,0.2); border-radius: 999px; transition: .15s; cursor: pointer; }
+        .switch span:before { content: ''; position: absolute; width: 12px; height: 12px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: .15s; }
+        .switch input:checked + span { background: #ef4444; }
+        .switch input:checked + span:before { transform: translateX(14px); }
+        #toast { transition: opacity 0.25s; }
+    </style>
+</head>
+<body class="relative text-white">
+
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Crosshair -->
+    <div id="crosshair" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center justify-center">
+        <div class="w-1.5 h-1.5 bg-red-500 rounded-full shadow-[0_0_6px_#ef4444]"></div>
+        <div class="absolute w-6 h-6 border border-white/40 rounded-full"></div>
+    </div>
+
+    <!-- Click-to-play hint (non-blocking, replaces splash screen) -->
+    <div id="playHint" class="fixed left-1/2 top-[58%] -translate-x-1/2 z-10 pointer-events-none panel px-3 py-1.5 text-[11px] mono text-zinc-200">
+        CLICK TO CAPTURE MOUSE &middot; ESC TO RELEASE
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed left-1/2 top-[38%] -translate-x-1/2 z-20 pointer-events-none panel px-3 py-1.5 text-xs mono text-amber-200" style="opacity:0"></div>
+
+    <!-- Top Left: Telemetry -->
+    <div class="fixed top-4 left-4 z-20 pointer-events-none panel flex flex-col gap-1 px-3.5 py-2.5">
+        <div class="flex items-center gap-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-zinc-400">FPS</span>
+            <span id="fpsCounter" class="mono text-sm font-bold text-emerald-400">60</span>
+            <span class="text-zinc-600">|</span>
+            <span class="text-xs font-bold uppercase tracking-wider text-zinc-400">VIEW</span>
+            <span id="viewIndicator" class="mono text-xs font-bold text-amber-300">1P</span>
+            <span class="text-zinc-600">|</span>
+            <span id="stanceIndicator" class="mono text-xs font-bold text-sky-300">STAND</span>
+        </div>
+        <div class="text-[11px] text-zinc-400 mono">
+            ROOM: <span id="roomTypeDisplay" class="text-white">ENTRY ATRIUM</span> | CELL: <span id="cellDisplay" class="text-white">0, 0</span>
+        </div>
+        <div class="text-[11px] text-zinc-400 mono">
+            BEAM: <span id="beamInfo" class="text-white">OFF</span>
+        </div>
+    </div>
+
+    <!-- Right column: settings (top) + hotkeys (bottom) -->
+    <div id="rightCol" class="fixed top-4 right-4 bottom-28 z-20 w-64 flex flex-col gap-2 pointer-events-none">
+        <button id="settingsShowBtn" class="hidden-ui pointer-events-auto self-end panel px-3 py-1.5 text-[11px] mono text-zinc-200 hover:text-white">
+            &#9881; SETTINGS <span class="kbd">J</span>
+        </button>
+        <div id="settingsPanel" class="panel pointer-events-auto p-3 flex flex-col gap-2 shrink-0 overflow-y-auto" style="max-height: 62vh">
+            <div class="flex items-center justify-between">
+                <span class="text-[11px] font-extrabold tracking-widest text-zinc-300">SETTINGS <span class="kbd">J</span></span>
+                <button id="settingsHideBtn" class="text-[11px] mono text-zinc-400 hover:text-white px-1.5 rounded border border-white/15">HIDE</button>
+            </div>
+            <div><div class="row"><label for="bounceSlider" class="lbl">Laser Bounces</label><span id="bounceValue" class="val text-red-400">30</span></div>
+                <input id="bounceSlider" type="range" min="1" max="60" value="30"></div>
+            <div><div class="row"><label for="speedSlider" class="lbl">Laser Speed</label><span id="speedValue" class="val text-red-300">250 m/s</span></div>
+                <input id="speedSlider" type="range" min="5" max="600" value="250"></div>
+            <div><div class="row"><label for="intensitySlider" class="lbl">Laser Intensity</label><span id="intensityValue" class="val text-rose-300">100%</span></div>
+                <input id="intensitySlider" type="range" min="0" max="300" value="100"></div>
+            <div><div class="row"><label for="iorSlider" class="lbl">Glass Refraction (IOR)</label><span id="iorValue" class="val text-cyan-300">1.40</span></div>
+                <input id="iorSlider" type="range" min="100" max="250" value="140"></div>
+            <div><div class="row"><label for="densitySlider" class="lbl">Object Density</label><span id="densityValue" class="val text-lime-300">100%</span></div>
+                <input id="densitySlider" type="range" min="0" max="300" value="100"></div>
+            <div><div class="row"><label for="dayNightSlider" class="lbl">Night &rarr; Day</label><span id="dayNightValue" class="val text-amber-300">10%</span></div>
+                <input id="dayNightSlider" type="range" min="0" max="100" value="10"></div>
+            <div><div class="row"><label for="lightingSlider" class="lbl">Lighting Quality</label><span id="lightingValue" class="val text-emerald-300">HIGH</span></div>
+                <input id="lightingSlider" type="range" min="1" max="3" value="3"></div>
+            <div><div class="row"><label for="textureSlider" class="lbl">Texture Quality</label><span id="textureValue" class="val text-sky-300">HIGH</span></div>
+                <input id="textureSlider" type="range" min="1" max="3" value="3"></div>
+            <div class="flex items-center justify-between pt-1.5 border-t border-white/10">
+                <span class="text-[10.5px] text-zinc-300 leading-tight">Beam follows aim at laser speed <span class="kbd">B</span></span>
+                <label class="switch"><input id="speedModeToggle" type="checkbox"><span></span></label>
+            </div>
+            <div class="flex items-center justify-between pt-1.5 border-t border-white/10 text-[11px] text-zinc-400">
+                <span>Color:</span>
+                <span class="flex items-center gap-1.5 font-semibold text-white">
+                    <span id="laserColorDot" class="w-2.5 h-2.5 rounded-full" style="background:#ff1e1e;box-shadow:0 0 8px #ff1e1e"></span>
+                    <span id="laserColorName">HYPER RED</span>
+                </span>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-zinc-400">
+                <span>Trigger <span class="kbd">V</span>: <strong id="laserModeBadge" class="text-emerald-300">HOLD</strong></span>
+                <span>Mouse <span class="kbd">X</span>: <strong id="freeMouseBadge" class="text-zinc-200">LOCKED</strong></span>
+            </div>
+            <button id="fullscreenBtn" class="text-[10.5px] mono py-1 rounded border border-white/15 text-zinc-300 hover:text-white hover:border-white/40">
+                FULLSCREEN (makes Ctrl-crouch safe)
+            </button>
+        </div>
+
+        <div id="hotkeysPanel" class="panel pointer-events-auto p-3 mt-auto min-h-0 overflow-y-auto">
+            <div class="text-[11px] font-extrabold tracking-widest text-zinc-300 mb-1">HOTKEYS <span class="kbd">H</span></div>
+            <div class="hk"><span>Move / Sprint</span><span><span class="kbd">WASD</span> <span class="kbd">Shift</span></span></div>
+            <div class="hk"><span>Jump (double)</span><span class="kbd">Space ×2</span></div>
+            <div class="hk"><span>Crouch</span><span><span class="kbd">Ctrl</span> / <span class="kbd">Z</span></span></div>
+            <div class="hk"><span>Fire / beam</span><span class="kbd">LMB</span></div>
+            <div class="hk"><span>Cycle color</span><span><span class="kbd">RMB</span> <span class="kbd">E</span> <span class="kbd">Q</span></span></div>
+            <div class="hk"><span>Laser / Gun / Rocket / Light</span><span class="kbd">1-4</span></div>
+            <div class="hk"><span>Open door</span><span class="kbd">F</span></div>
+            <div class="hk"><span>Push</span><span class="kbd">Caps</span></div>
+            <div class="hk"><span>Reset camera</span><span class="kbd">T</span></div>
+            <div class="hk"><span>1P / 3P view</span><span class="kbd">C</span></div>
+            <div class="hk"><span>Orbit 3P cam</span><span class="kbd">MMB</span></div>
+            <div class="hk"><span>Laser hold/toggle</span><span class="kbd">V</span></div>
+            <div class="hk"><span>Beam speed mode</span><span class="kbd">B</span></div>
+            <div class="hk"><span>Free mouse / pause</span><span class="kbd">X</span></div>
+            <div class="hk"><span>Settings / Hotkeys</span><span><span class="kbd">J</span> <span class="kbd">H</span></span></div>
+        </div>
+    </div>
+
+    <!-- Bottom Center: Weapon Bar -->
+    <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none w-full max-w-xl px-4">
+        <div class="grid grid-cols-4 gap-2.5 w-full">
+            <div id="slot-1" class="weapon-slot active panel p-2.5 flex flex-col items-center"><span class="mono text-[10px] text-zinc-400 mb-0.5">[1]</span><span class="text-xs font-bold tracking-wide">LASER</span></div>
+            <div id="slot-2" class="weapon-slot panel p-2.5 flex flex-col items-center"><span class="mono text-[10px] text-zinc-400 mb-0.5">[2]</span><span class="text-xs font-bold tracking-wide">MINIGUN</span></div>
+            <div id="slot-3" class="weapon-slot panel p-2.5 flex flex-col items-center"><span class="mono text-[10px] text-zinc-400 mb-0.5">[3]</span><span class="text-xs font-bold tracking-wide">ROCKET</span></div>
+            <div id="slot-4" class="weapon-slot panel p-2.5 flex flex-col items-center"><span class="mono text-[10px] text-zinc-400 mb-0.5">[4]</span><span class="text-xs font-bold tracking-wide">FLASHLIGHT</span></div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * LIMINAL LASER COMPLEX
+         * Single-file three.js (r128) game. Sections:
+         *  1 config/state  2 audio  3 renderer/lights/textures  4 world gen
+         *  5 weapons/deformation  6 laser optics  7 flashlight  8 player  9 input/UI/loop
+         */
+
+        // ==========================================
+        // 1. CONFIGURATION & STATE  (tweak these!)
+        // ==========================================
+        const CONFIG = {
+            // World layout
+            CELL_SIZE: 22,              // one grid cell (m)
+            BLOCK: 3,                   // big rooms live inside BLOCK x BLOCK cell groups
+            BIG_ROOM_CHANCE: 0.38,      // chance a block contains a multi-cell room
+            SOLID_EDGE_CHANCE: 0.10,    // chance a shared wall has no doorway
+            RED_DOOR_CHANCE: 0.42,      // chance a doorway has a lift door (red) instead of an open portal (blue)
+            STREAM_RADIUS: 2,           // cells loaded around the player
+            WALL_THICKNESS: 0.8,
+            DOOR_WIDTH: 3.8,
+            DOOR_HEIGHT: 3.6,
+            DOOR_OPEN_TIME: 0.55,       // seconds for lift doors
+
+            // Player
+            GRAVITY: 26.0,
+            PLAYER_SPEED: 7.8,
+            SPRINT_MULTIPLIER: 1.65,
+            CROUCH_SPEED_MULT: 0.5,
+            JUMP_FORCE: 9.6,
+            DOUBLE_JUMP_FORCE: 8.6,
+            MAX_JUMPS: 2,
+            PLAYER_RADIUS: 0.42,
+            STAND_HEIGHT: 2.0,
+            CROUCH_HEIGHT: 1.2,
+            CROUCH_TIME: 0.30,
+            EYE_OFFSET: 0.16,
+            PUSH_RADIUS: 4.5,
+            PUSH_FORCE: 11.5,
+            MOUSE_SENSITIVITY: 0.0022 * 0.7,
+
+            // Laser
+            LASER_SPEED: 250.0,         // m/s (slider)
+            LASER_MAX_RANGE: 420,
+            LASER_WORLD_WIDTH: 0.010,   // physical beam diameter (m)
+            LASER_MIN_PX: 1.5,          // never thinner than this on screen (prevents dotted aliasing)
+            LASER_MAX_PX: 4.5,
+            HIT_LIGHT_INTENSITY: 0.8,
+            HIT_LIGHT_DISTANCE: 7,
+            GLOW_SUSTAIN: 1.0,          // lit objects stay full-bright this long after the beam leaves
+            GLOW_FADE: 2.0,             // ...then fade over this long
+            GLOW_LIGHT_INTENSITY: 0.35, // ambient light from still-lit objects
+            GLOW_LIGHT_DISTANCE: 6.5,
+            GLASS_IOR: 1.40,            // slider
+
+            // Doors / ambient
+            DOOR_LIGHT_INTENSITY: 0.45,
+            DOOR_LIGHT_DISTANCE: 7.5,
+            DAY_MAX: 0.56,              // max "day" brightness (0.70 old cap x 0.8)
+
+            // Flashlight
+            FLASH_INTENSITY: 2.4,
+            FLASH_RANGE: 32,
+            FLASH_ANGLE: 0.40,
+            FLASH_PENUMBRA: 0.45,
+            CAUSTIC_RAYS: 110,          // rays traced through glass for caustics
+
+            // Generation
+            DENSITY: 1.0                // slider
+        };
+
+        // Ordered so neighbours in the cycle are never similar hues (min ~90 deg apart).
+        // note = pentatonic pitch used by the beam hum, so cycling colors plays a little melody.
+        const LASER_COLORS = [
+            { name: 'HYPER RED',     hex: 0xff1e1e, css: '#ff1e1e', note: 220.00 },
+            { name: 'NEON EMERALD',  hex: 0x00ff7f, css: '#00ff7f', note: 261.63 },
+            { name: 'BLAZE ORANGE',  hex: 0xff5e00, css: '#ff5e00', note: 293.66 },
+            { name: 'PLASMA VIOLET', hex: 0x9d00ff, css: '#9d00ff', note: 329.63 },
+            { name: 'ACID LIME',     hex: 0xaaff00, css: '#aaff00', note: 392.00 },
+            { name: 'LASER MAGENTA', hex: 0xff00cc, css: '#ff00cc', note: 440.00 },
+            { name: 'SOLAR GOLD',    hex: 0xffd000, css: '#ffd000', note: 523.25 },
+            { name: 'ELECTRIC CYAN', hex: 0x00e5ff, css: '#00e5ff', note: 587.33 }
+        ];
+
+        const state = {
+            simTime: 0,
+            isLocked: false,
+            isFreeMousePaused: false,
+            weapon: 1,
+            isFiring: false,
+            laserToggleMode: false,
+            laserToggledOn: false,
+            laserSpeedMode: false,
+            laserIntensity: 1.0,
+            flashlightOn: true,
+            fireCooldown: 0,
+            minigunSpin: 0,
+            isThirdPerson: false,
+            thirdPersonDist: 4.8,
+            tpOrbitYaw: 0,
+            tpOrbitPitch: 0.25,
+            isResettingCamera: false,
+            isLevelingPitch: false,
+            isMiddleMouseDown: false,
+            laserBounces: 30,
+            laserColorIdx: 0,
+            dayNight: 0.10,
+            lightingQuality: 3,
+            textureQuality: 3,
+            keys: {},
+            player: {
+                pos: new THREE.Vector3(0, CONFIG.STAND_HEIGHT, 0),
+                vel: new THREE.Vector3(0, 0, 0),
+                yaw: 0,
+                pitch: 0,
+                height: CONFIG.STAND_HEIGHT,
+                crouchT: 0,            // 0 = standing, 1 = fully crouched (eased)
+                onGround: true,
+                jumpsUsed: 0,
+                jumpQueued: false,
+                bobTimer: 0
+            }
+        };
+
+        // ==========================================
+        // 2. PROCEDURAL WEB AUDIO
+        // ==========================================
+        let audioCtx = null;
+        let masterGain = null;
+
+        function ensureAudio() {
+            if (!audioCtx) {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (AC) {
+                    audioCtx = new AC();
+                    masterGain = audioCtx.createGain();
+                    masterGain.gain.value = 0.9;
+                    masterGain.connect(audioCtx.destination);
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+        }
+
+        function blip(type, f0, f1, dur, vol, delay = 0) {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime + delay;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(f0, now);
+            if (f1 !== f0) osc.frequency.exponentialRampToValueAtTime(f1, now + dur * 0.9);
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(vol, now + Math.min(0.012, dur * 0.2));
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+            osc.connect(gain); gain.connect(masterGain);
+            osc.start(now); osc.stop(now + dur + 0.02);
+        }
+
+        function noiseBurst(dur, vol, f0, f1, type = 'lowpass') {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            const len = Math.floor(audioCtx.sampleRate * dur);
+            const buffer = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.8);
+            const src = audioCtx.createBufferSource();
+            src.buffer = buffer;
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = type;
+            filter.frequency.setValueAtTime(f0, now);
+            filter.frequency.exponentialRampToValueAtTime(f1, now + dur);
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+            src.connect(filter); filter.connect(gain); gain.connect(masterGain);
+            src.start(now);
+        }
+
+        function playMinigunSound() { blip('sawtooth', 102 + Math.random() * 22, 28, 0.08, 0.13); }
+        function playRocketLaunchSound() { blip('triangle', 140, 52, 0.24, 0.2); noiseBurst(0.2, 0.08, 1800, 300); }
+        function playExplosionSound() { noiseBurst(0.32, 0.3, 360, 55); }
+        function playNpcYelpSound() {
+            const p = 340 + Math.random() * 110;
+            blip('triangle', p, p * 1.45, 0.07, 0.08);
+            blip('triangle', p * 1.45, p * 0.75, 0.1, 0.07, 0.06);
+        }
+        function playDoorSound(opening) {
+            blip('sine', opening ? 140 : 260, opening ? 280 : 120, 0.5, 0.07);
+            noiseBurst(0.45, 0.05, opening ? 500 : 1200, opening ? 1600 : 300, 'bandpass');
+            blip('sine', opening ? 880 : 660, opening ? 1320 : 440, 0.12, 0.03, 0.42);
+        }
+        function playJumpSound(second) { noiseBurst(0.14, second ? 0.07 : 0.035, 900, 2400, 'bandpass'); if (second) blip('sine', 520, 900, 0.12, 0.03); }
+        function playPushSound() { noiseBurst(0.35, 0.16, 220, 60); blip('sine', 90, 45, 0.3, 0.12); }
+        function playClickSound(on) { blip('square', on ? 1800 : 1200, on ? 1800 : 1200, 0.025, 0.03); }
+
+        // Laser on/off: a soft rising "tsiu" with a sparkle, and a falling one when off
+        function playLaserSwitchSound(on) {
+            const n = LASER_COLORS[state.laserColorIdx].note;
+            if (on) {
+                blip('sine', n * 2, n * 4, 0.09, 0.04);
+                blip('triangle', n * 4, n * 6, 0.06, 0.015, 0.03);
+                noiseBurst(0.05, 0.03, 6000, 9000, 'highpass');
+            } else {
+                blip('sine', n * 4, n * 1.5, 0.12, 0.03);
+            }
+        }
+
+        // Bell-like "tink" when the beam first lights a glass object
+        let lastTinkTime = 0;
+        function playGlassTink() {
+            if (!audioCtx) return;
+            const t = audioCtx.currentTime;
+            if (t - lastTinkTime < 0.05) return;
+            lastTinkTime = t;
+            const n = LASER_COLORS[state.laserColorIdx].note * 4 * (Math.random() < 0.5 ? 1 : 1.5);
+            blip('sine', n, n, 0.45, 0.022);
+            blip('sine', n * 2.76, n * 2.76, 0.18, 0.008);
+        }
+
+        // Continuous beam hum: fundamental + detuned fifth + octave shimmer through a lowpass, gentle tremolo.
+        const hum = { nodes: null };
+        function startHum() {
+            if (!audioCtx || hum.nodes) return;
+            const now = audioCtx.currentTime;
+            const out = audioCtx.createGain(); out.gain.value = 0.0001;
+            const trem = audioCtx.createGain(); trem.gain.value = 0.85;
+            const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 1200; filter.Q.value = 2.5;
+            const o1 = audioCtx.createOscillator(); o1.type = 'sine';
+            const o2 = audioCtx.createOscillator(); o2.type = 'triangle';
+            const o3 = audioCtx.createOscillator(); o3.type = 'sine';
+            const g2 = audioCtx.createGain(); g2.gain.value = 0.22;
+            const g3 = audioCtx.createGain(); g3.gain.value = 0.12;
+            const lfo = audioCtx.createOscillator(); lfo.frequency.value = 5.2;
+            const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 0.15;
+            lfo.connect(lfoGain); lfoGain.connect(trem.gain);
+            o1.connect(filter); o2.connect(g2); g2.connect(filter); o3.connect(g3); g3.connect(filter);
+            filter.connect(trem); trem.connect(out); out.connect(masterGain);
+            [o1, o2, o3, lfo].forEach((o) => o.start(now));
+            hum.nodes = { out, filter, o1, o2, o3, lfo };
+            updateHum(0, true);
+        }
+        function updateHum(bounceCount, immediate = false) {
+            if (!hum.nodes) return;
+            const now = audioCtx.currentTime;
+            const n = LASER_COLORS[state.laserColorIdx].note * 0.5;
+            const glide = immediate ? 0.001 : 0.05;
+            hum.nodes.o1.frequency.setTargetAtTime(n, now, glide);
+            hum.nodes.o2.frequency.setTargetAtTime(n * 1.5 * 1.003, now, glide);
+            hum.nodes.o3.frequency.setTargetAtTime(n * 2.005, now, glide);
+            hum.nodes.filter.frequency.setTargetAtTime(700 + Math.min(40, bounceCount) * 45, now, 0.15);
+            const vol = 0.05 * Math.min(1.6, Math.sqrt(state.laserIntensity + 0.05));
+            hum.nodes.out.gain.setTargetAtTime(vol, now, immediate ? 0.03 : 0.1);
+        }
+        function stopHum() {
+            if (!hum.nodes) return;
+            const now = audioCtx.currentTime;
+            const nodes = hum.nodes;
+            hum.nodes = null;
+            nodes.out.gain.setTargetAtTime(0.0001, now, 0.05);
+            [nodes.o1, nodes.o2, nodes.o3, nodes.lfo].forEach((o) => o.stop(now + 0.4));
+        }
+
+        // ==========================================
+        // 3. RENDERER, LIGHT POOLS, TEXTURES & MATERIALS
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        // Shadow maps are what stop laser light leaking through walls (a depth-based visibility test per light)
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFShadowMap;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0d0f12);
+        scene.fog = new THREE.FogExp2(0x0d0f12, 0.012);
+
+        const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 160);
+        scene.add(camera);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x9aa4b2, 1.0);
+        scene.add(hemiLight);
+        const dirLight = new THREE.DirectionalLight(0xfff7ed, 0.6);
+        dirLight.position.set(18, 32, 14);
+        scene.add(dirLight);
+
+        const PARK_Y = -500; // unused pooled lights are parked far below the world (shadow passes cull everything)
+        function parkLight(l) { l.intensity = 0; l.position.set(0, PARK_Y, 0); }
+
+        function makePointPool(n, distance, shadow) {
+            const pool = [];
+            for (let i = 0; i < n; i++) {
+                const l = new THREE.PointLight(0xffffff, 0, distance, 2);
+                if (shadow) {
+                    l.shadow.mapSize.set(256, 256);
+                    l.shadow.camera.near = 0.05;
+                    l.shadow.camera.far = distance;
+                    l.shadow.bias = -0.004;
+                }
+                parkLight(l);
+                scene.add(l);
+                pool.push(l);
+            }
+            return pool;
+        }
+        const hitLights = makePointPool(6, CONFIG.HIT_LIGHT_DISTANCE, true);   // beam contact points (shadowed)
+        const glowLights = makePointPool(4, CONFIG.GLOW_LIGHT_DISTANCE, false); // still-lit objects
+        const doorLights = makePointPool(6, CONFIG.DOOR_LIGHT_DISTANCE, false); // red/blue door frames
+
+        const flashLight = new THREE.SpotLight(0xfff1d6, 0, CONFIG.FLASH_RANGE, CONFIG.FLASH_ANGLE, CONFIG.FLASH_PENUMBRA, 1.4);
+        flashLight.shadow.mapSize.set(512, 512);
+        flashLight.shadow.camera.near = 0.1;
+        flashLight.shadow.camera.far = CONFIG.FLASH_RANGE;
+        flashLight.shadow.bias = -0.0015;
+        parkLight(flashLight);
+        scene.add(flashLight);
+        scene.add(flashLight.target);
+
+        function activeHitLightCount() { return state.lightingQuality === 1 ? 2 : state.lightingQuality === 2 ? 4 : 6; }
+
+        function applyLightingQuality() {
+            const q = state.lightingQuality;
+            const shadowed = q === 3 ? 1 : 0;   // room masks stop wall leaks; shadows add in-room occlusion for the nearest hit
+            hitLights.forEach((l, i) => { l.castShadow = i < shadowed; });
+            flashLight.castShadow = q >= 2;
+            applyEnvironmentLighting();
+        }
+
+        function applyEnvironmentLighting() {
+            const t = state.dayNight * CONFIG.DAY_MAX;
+            const bgCol = new THREE.Color().setHSL(0.6, 0.14, 0.04 + t * 0.72);
+            scene.background.copy(bgCol);
+            scene.fog.color.copy(bgCol);
+            scene.fog.density = state.lightingQuality === 1 ? 0.018 : 0.012;
+            hemiLight.intensity = 0.12 + t * 0.9;
+            dirLight.intensity = 0.04 + t * 0.6;
+        }
+
+        // ---------- Textures (world-scale UVs keep texel density identical on every surface) ----------
+        const TILE = { wall: 2.0, floor: 2.0, ceil: 2.4, prop: 1.0, door: 1.0 };
+        const TEX = {};
+
+        function noiseSpeckle(ctx, size, count, light, dark) {
+            for (let i = 0; i < count; i++) {
+                ctx.fillStyle = Math.random() > 0.5 ? light : dark;
+                ctx.fillRect(Math.random() * size, Math.random() * size, 1 + Math.random() * 1.5, 1 + Math.random() * 1.5);
+            }
+        }
+
+        function createSurfaceTexture(kind, q) {
+            const size = q === 1 ? 128 : q === 2 ? 256 : 512;
+            const c = document.createElement('canvas');
+            c.width = c.height = size;
+            const ctx = c.getContext('2d');
+            const s = size / 256;
+            if (kind === 'wall') {
+                ctx.fillStyle = '#eef0f3'; ctx.fillRect(0, 0, size, size);
+                const g = ctx.createLinearGradient(0, 0, 0, size);
+                g.addColorStop(0, 'rgba(255,255,255,0.05)'); g.addColorStop(1, 'rgba(0,0,0,0.04)');
+                ctx.fillStyle = g; ctx.fillRect(0, 0, size, size);
+                if (q >= 2) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+                    ctx.fillRect(0, 0, size, 2 * s); ctx.fillRect(0, 0, 2 * s, size);       // panel seam
+                    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                    ctx.fillRect(0, 2 * s, size, 1 * s); ctx.fillRect(2 * s, 0, 1 * s, size); // seam highlight
+                }
+                if (q === 3) noiseSpeckle(ctx, size, 900, 'rgba(255,255,255,0.22)', 'rgba(0,0,0,0.03)');
+            } else if (kind === 'floor') {
+                ctx.fillStyle = '#cfd4db'; ctx.fillRect(0, 0, size, size);
+                const n = 4, step = size / n;
+                for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+                    const v = 200 + Math.floor(Math.random() * 14);
+                    ctx.fillStyle = `rgb(${v},${v + 4},${v + 10})`;
+                    ctx.fillRect(i * step + 1.5 * s, j * step + 1.5 * s, step - 3 * s, step - 3 * s);
+                }
+                if (q === 3) noiseSpeckle(ctx, size, 1400, 'rgba(255,255,255,0.18)', 'rgba(0,0,0,0.05)');
+            } else if (kind === 'ceil') {
+                ctx.fillStyle = '#e7eaee'; ctx.fillRect(0, 0, size, size);
+                const n = 2, step = size / n;
+                ctx.strokeStyle = 'rgba(0,0,0,0.16)'; ctx.lineWidth = 3 * s;
+                for (let i = 0; i <= n; i++) {
+                    ctx.beginPath(); ctx.moveTo(i * step, 0); ctx.lineTo(i * step, size); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(0, i * step); ctx.lineTo(size, i * step); ctx.stroke();
+                }
+                if (q >= 2) for (let i = 0; i < 700 * s; i++) {      // acoustic tile pinholes
+                    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+                    ctx.fillRect(Math.random() * size, Math.random() * size, 1.2 * s, 1.2 * s);
+                }
+            } else {
+                ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, size, size);
+                if (q >= 2) noiseSpeckle(ctx, size, 500, 'rgba(255,255,255,0.3)', 'rgba(0,0,0,0.035)');
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.anisotropy = q === 3 ? renderer.capabilities.getMaxAnisotropy() : q === 2 ? 4 : 1;
+            return tex;
+        }
+
+        function rebuildTextures(q) {
+            ['wall', 'floor', 'ceil', 'prop', 'door'].forEach((k) => {
+                if (TEX[k]) TEX[k].dispose();
+                TEX[k] = createSurfaceTexture(k === 'door' ? 'prop' : k, q);
+            });
+        }
+        rebuildTextures(state.textureQuality);
+
+        // ---------- Room light masks (cheap, exact "no light through walls") ----------
+        // Every pooled point light gets a world-space box (the room it is in). The Phong shader
+        // multiplies that light by 0 outside the box, fading over 0.3 m inside the wall core.
+        // Point-light shader index: 0-5 hit lights, 6-9 glow lights, 10-15 door lights.
+        const NUM_MASKED = 16;
+        const LIGHT_MASK = {
+            min: { value: Array.from({ length: NUM_MASKED }, () => new THREE.Vector3(-1e5, -1e5, -1e5)) },
+            max: { value: Array.from({ length: NUM_MASKED }, () => new THREE.Vector3(1e5, 1e5, 1e5)) }
+        };
+        function lightMaskCompile(shader) {
+            shader.uniforms.uMaskMin = LIGHT_MASK.min;
+            shader.uniforms.uMaskMax = LIGHT_MASK.max;
+            shader.vertexShader = 'varying vec3 vMaskWorld;\n' + shader.vertexShader.replace(
+                '#include <project_vertex>',
+                '#include <project_vertex>\n\tvMaskWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+            shader.fragmentShader =
+                `uniform vec3 uMaskMin[${NUM_MASKED}];\nuniform vec3 uMaskMax[${NUM_MASKED}];\nvarying vec3 vMaskWorld;\n` +
+                'float lightMask(vec3 mn, vec3 mx) { vec3 a = smoothstep(mn, mn + 0.3, vMaskWorld) * (1.0 - smoothstep(mx - 0.3, mx, vMaskWorld)); return a.x * a.y * a.z; }\n' +
+                shader.fragmentShader.replace('#include <lights_fragment_begin>',
+                    THREE.ShaderChunk.lights_fragment_begin.replace(
+                        'getPointDirectLightIrradiance( pointLight, geometry, directLight );',
+                        'getPointDirectLightIrradiance( pointLight, geometry, directLight );\n\t\tdirectLight.color *= lightMask( uMaskMin[ i ], uMaskMax[ i ] );'));
+        }
+        function patchLightMask(mat) { mat.onBeforeCompile = lightMaskCompile; return mat; }
+
+        // Box around the room containing world point p (cell or whole big room), +0.3 m into the walls
+        function setLightMaskForPoint(index, p) {
+            const C = CONFIG.CELL_SIZE;
+            const spec = getRoomSpec(getCellOwner(Math.round(p.x / C), Math.round(p.z / C)));
+            const hw = spec.w * C / 2 + 0.3, hd = spec.d * C / 2 + 0.3;
+            LIGHT_MASK.min.value[index].set(spec.cx - hw, -1e5, spec.cz - hd);
+            LIGHT_MASK.max.value[index].set(spec.cx + hw, 1e5, spec.cz + hd);
+        }
+
+        // Shared materials (never disposed with rooms)
+        function sharedSurfaceMat(kind, shininess) {
+            const m = patchLightMask(new THREE.MeshPhongMaterial({ vertexColors: true, map: TEX[kind], shininess, specular: 0x141414 }));
+            m.userData.shared = true;
+            m.userData.surface = kind;
+            return m;
+        }
+        const MAT = {
+            wall: sharedSurfaceMat('wall', 6),
+            floor: sharedSurfaceMat('floor', 22),
+            ceil: sharedSurfaceMat('ceil', 4),
+            door: sharedSurfaceMat('door', 30),
+            frameBlue: new THREE.MeshBasicMaterial({ color: 0x2f6bff }),
+            frameRed: new THREE.MeshBasicMaterial({ color: 0xff2a2a }),
+            propEdge: new THREE.LineBasicMaterial({ color: 0x1f2937, transparent: true, opacity: 0.28 }),
+            glassEdge: new THREE.LineBasicMaterial({ color: 0xe0f7ff, transparent: true, opacity: 0.55 })
+        };
+        Object.values(MAT).forEach((m) => { m.userData.shared = true; });
+        MAT.door.color.setHex(0xdfe6ef);
+
+        // Box-projected UVs from local positions -> uniform texel density regardless of mesh size
+        function applyBoxUVs(geom, tile) {
+            const pos = geom.attributes.position;
+            const nrm = geom.attributes.normal;
+            const uv = new Float32Array(pos.count * 2);
+            for (let i = 0; i < pos.count; i++) {
+                const ax = Math.abs(nrm.getX(i)), ay = Math.abs(nrm.getY(i)), az = Math.abs(nrm.getZ(i));
+                let u, v;
+                if (ax >= ay && ax >= az) { u = pos.getZ(i); v = pos.getY(i); }
+                else if (ay >= ax && ay >= az) { u = pos.getX(i); v = pos.getZ(i); }
+                else { u = pos.getX(i); v = pos.getY(i); }
+                uv[i * 2] = u / tile;
+                uv[i * 2 + 1] = v / tile;
+            }
+            geom.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+        }
+
+        function addVertexColors(geom, colorHex) {
+            const count = geom.attributes.position.count;
+            const colors = new Float32Array(count * 3);
+            const c = new THREE.Color(colorHex);
+            for (let i = 0; i < count; i++) { colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b; }
+            geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        }
+
+        function finishSolid(mesh, hp) {
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.userData.hp = hp;
+            mesh.userData.maxHp = hp;
+            mesh.userData.destroyed = false;
+            return mesh;
+        }
+
+        // Architectural box (walls, floors, ceilings, doors): shared material, world-scale UVs
+        function createDeformableBox(w, h, d, surface, hp, colorHex = 0xffffff) {
+            const segX = Math.max(2, Math.min(14, Math.round(w * 1.4)));
+            const segY = Math.max(2, Math.min(12, Math.round(h * 1.5)));
+            const segZ = Math.max(2, Math.min(14, Math.round(d * 1.4)));
+            const geom = new THREE.BoxGeometry(w, h, d, segX, segY, segZ);
+            applyBoxUVs(geom, TILE[surface] || 2);
+            addVertexColors(geom, colorHex);
+            const mesh = new THREE.Mesh(geom, MAT[surface] || MAT.wall);
+            mesh.userData.maxDeform = Math.max(0.06, Math.min(w, h, d) * 0.4);
+            mesh.userData.half = new THREE.Vector3(w / 2, h / 2, d / 2);
+            mesh.raycast = boxRaycast;   // exact OBB hit instead of testing ~900 subdivision triangles
+            return finishSolid(mesh, hp);
+        }
+
+        // Props: own material (so they can glow when lit by the laser) + crisp edge lines
+        function createPropMesh(geom, colorHex, hp, withEdges = true) {
+            const boxParams = geom.type === 'BoxGeometry' ? geom.parameters : null;
+            const g = geom.index ? geom.toNonIndexed() : geom;
+            g.computeVertexNormals();
+            addVertexColors(g, colorHex);
+            const mat = patchLightMask(new THREE.MeshPhongMaterial({ vertexColors: true, map: TEX.prop, shininess: 14, specular: 0x202020, emissive: 0x000000 }));
+            mat.userData.surface = 'prop';
+            const mesh = new THREE.Mesh(g, mat);
+            if (boxParams) {
+                mesh.userData.half = new THREE.Vector3(boxParams.width / 2, boxParams.height / 2, boxParams.depth / 2);
+                mesh.raycast = boxRaycast;
+            }
+            mesh.userData.glowable = true;
+            mesh.userData.glowTimer = 0;
+            mesh.userData.glowColor = 0xffffff;
+            g.computeBoundingBox();
+            const sz = new THREE.Vector3(); g.boundingBox.getSize(sz);
+            mesh.userData.maxDeform = Math.max(0.05, Math.min(sz.x, sz.y, sz.z) * 0.3);
+            if (withEdges) {
+                const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 28), MAT.propEdge);
+                mesh.add(edges);
+                mesh.userData.edges = edges;
+            }
+            return finishSolid(mesh, hp);
+        }
+
+        function createGlassMesh(geom, analytic) {
+            const mat = patchLightMask(new THREE.MeshPhongMaterial({
+                color: 0xcfeeff, emissive: 0x000000, transparent: true, opacity: 0.26,
+                shininess: 160, specular: 0xffffff, depthWrite: false
+            }));
+            const mesh = new THREE.Mesh(geom, mat);
+            if (geom.type === 'BoxGeometry') {
+                const bp = geom.parameters;
+                mesh.userData.half = new THREE.Vector3(bp.width / 2, bp.height / 2, bp.depth / 2);
+                mesh.raycast = boxRaycast;
+            }
+            mesh.castShadow = false;     // light passes through glass (caustics are traced instead)
+            mesh.receiveShadow = false;
+            mesh.renderOrder = 2;
+            mesh.userData.isGlass = true;
+            mesh.userData.glowable = true;
+            mesh.userData.glowTimer = 0;
+            mesh.userData.glowColor = 0xffffff;
+            mesh.userData.hp = 260; mesh.userData.maxHp = 260; mesh.userData.destroyed = false;
+            if (analytic) Object.assign(mesh.userData, analytic);
+            if (analytic && analytic.analytic === 'sphere') mesh.raycast = sphereRaycast;   // exact + fast
+            if (!analytic || analytic.analytic !== 'sphere') {
+                const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom, 25), MAT.glassEdge);
+                edges.renderOrder = 3;
+                mesh.add(edges);
+            }
+            return mesh;
+        }
+
+        // Shape vocabulary for props (all < 17 faces)
+        function createGeometricShapeSpec(rand) {
+            const r = rand();
+            if (r < 0.48) {
+                if (rand() < 0.55) {
+                    const w = 0.9 + rand() * 1.3, h = 0.8 + rand() * 1.8, d = 0.8 + rand() * 1.3;
+                    return { geom: new THREE.BoxGeometry(w, h, d, 3, 3, 3), dims: new THREE.Vector3(w / 2, h / 2, d / 2) };
+                }
+                const rad = 0.75 + rand() * 0.5, h = 1.0 + rand() * 1.6;
+                return { geom: new THREE.CylinderGeometry(rad, rad, h, 3, 2), dims: new THREE.Vector3(rad * 0.85, h / 2, rad * 0.85) };
+            }
+            const choice = Math.floor(rand() * 5);
+            const rad = 0.7 + rand() * 0.55, h = 1.1 + rand() * 1.7;
+            if (choice === 0) return { geom: new THREE.ConeGeometry(rad, h, 3, 2), dims: new THREE.Vector3(rad * 0.8, h / 2, rad * 0.8) };
+            if (choice === 1) return { geom: new THREE.ConeGeometry(rad, h, 4, 2), dims: new THREE.Vector3(rad * 0.8, h / 2, rad * 0.8) };
+            if (choice === 2) return { geom: new THREE.ConeGeometry(rad, h, 5, 2), dims: new THREE.Vector3(rad * 0.85, h / 2, rad * 0.85) };
+            if (choice === 3) return { geom: new THREE.CylinderGeometry(rad, rad, h, 6, 2), dims: new THREE.Vector3(rad * 0.85, h / 2, rad * 0.85) };
+            return { geom: new THREE.OctahedronGeometry(rad, 0), dims: new THREE.Vector3(rad * 0.8, rad * 0.8, rad * 0.8) };
+        }
+
+        // Glass vocabulary: smooth spheres & cylinders use analytic normals for exact refraction
+        function createGlassSpec(rand) {
+            const r = rand();
+            if (r < 0.28) {
+                const rad = 0.55 + rand() * 0.6;
+                return { kind: 'sphere', geom: new THREE.SphereGeometry(rad, 36, 24), dims: new THREE.Vector3(rad, rad, rad), analytic: { analytic: 'sphere', radius: rad } };
+            }
+            if (r < 0.44) {
+                const rad = 0.6 + rand() * 0.45, h = 1.2 + rand() * 1.4;
+                return { kind: 'prism', geom: new THREE.CylinderGeometry(rad, rad, h, 3, 1), dims: new THREE.Vector3(rad * 0.8, h / 2, rad * 0.8) };
+            }
+            if (r < 0.58) {
+                const w = 1.6 + rand() * 1.2, h = 1.6 + rand() * 1.0;
+                return { kind: 'pane', geom: new THREE.BoxGeometry(w, h, 0.14), dims: new THREE.Vector3(w / 2, h / 2, 0.07) };
+            }
+            if (r < 0.70) {
+                const s = 0.8 + rand() * 0.8;
+                return { kind: 'cube', geom: new THREE.BoxGeometry(s, s, s), dims: new THREE.Vector3(s / 2, s / 2, s / 2) };
+            }
+            if (r < 0.82) {
+                const rad = 0.45 + rand() * 0.45, h = 1.0 + rand() * 1.6;
+                return { kind: 'cylinder', geom: new THREE.CylinderGeometry(rad, rad, h, 32, 1), dims: new THREE.Vector3(rad, h / 2, rad), analytic: { analytic: 'cylinder', radius: rad, halfH: h / 2 } };
+            }
+            const s = createGeometricShapeSpec(rand);
+            return { kind: 'poly', geom: s.geom, dims: s.dims };
+        }
+
+        // ==========================================
+        // 4. PROCEDURAL WORLD
+        //    Cells own their interior; shared walls ("edges") are separate chunks owned by
+        //    nobody, so neighbouring rooms never build two overlapping, z-fighting walls.
+        //    Big rooms claim a rectangle of cells inside a BLOCK x BLOCK group.
+        // ==========================================
+        const V3 = THREE.Vector3;
+        const destructibleMeshes = [];   // everything the laser / bullets can hit
+        const solidColliders = [];       // OBB colliders for the player
+        const glassObjects = [];
+        const glowables = [];            // props + glass that light up when hit
+        const roomPeople = [];
+        const interactiveDoors = [];
+        const doorEmitters = [];         // red/blue door frames that cast faint light
+        const roomsMap = new Map();
+        const edgesMap = new Map();
+        let worldVersion = 0;            // bumped whenever geometry the beam might hit moves/changes
+
+        function hash3(x, y, s) {
+            let h = Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x165667b1) ^ Math.imul(s | 0, 0x9e3779b1);
+            h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+            h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+            return (h ^ (h >>> 16)) >>> 0;
+        }
+        function mulberry32(a) {
+            return function () {
+                a |= 0; a = (a + 0x6D2B79F5) | 0;
+                let t = Math.imul(a ^ (a >>> 15), 1 | a);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        }
+
+        const blockCache = new Map();
+        function getBlockSpec(bx, bz) {
+            const key = `${bx},${bz}`;
+            if (blockCache.has(key)) return blockCache.get(key);
+            const r = mulberry32(hash3(bx, bz, 7));
+            const B = CONFIG.BLOCK;
+            let big = null;
+            if (r() < CONFIG.BIG_ROOM_CHANCE) {
+                const sizes = [[2, 1], [1, 2], [2, 2], [2, 2], [3, 1], [1, 3], [3, 2], [2, 3]];
+                const [w, d] = sizes[Math.floor(r() * sizes.length)];
+                const ox = Math.floor(r() * (B - w + 1));
+                const oz = Math.floor(r() * (B - d + 1));
+                big = { x0: bx * B + ox, z0: bz * B + oz, w, d };
+                if (0 >= big.x0 && 0 < big.x0 + w && 0 >= big.z0 && 0 < big.z0 + d) big = null; // keep spawn cell normal
+            }
+            const spec = { big };
+            blockCache.set(key, spec);
+            return spec;
+        }
+
+        function getCellOwner(gx, gz) {
+            const B = CONFIG.BLOCK;
+            const bx = Math.floor(gx / B), bz = Math.floor(gz / B);
+            const b = getBlockSpec(bx, bz).big;
+            if (b && gx >= b.x0 && gx < b.x0 + b.w && gz >= b.z0 && gz < b.z0 + b.d) {
+                return { key: `B${bx},${bz}`, big: b, bx, bz };
+            }
+            return { key: `${gx},${gz}`, big: null, gx, gz };
+        }
+
+        const roomSpecCache = new Map();
+        function getRoomSpec(owner) {
+            if (roomSpecCache.has(owner.key)) return roomSpecCache.get(owner.key);
+            const C = CONFIG.CELL_SIZE;
+            let spec;
+            if (owner.big) {
+                const b = owner.big;
+                const r = mulberry32(hash3(owner.bx, owner.bz, 11));
+                const height = 8 + Math.floor(r() * 3) * 2;
+                const pool = ['pillars', 'baffles', 'mezzanine', 'lens', 'monoliths'];
+                const feats = [];
+                const count = 2 + (r() < 0.45 ? 1 : 0);
+                while (feats.length < count) {
+                    const f = pool[Math.floor(r() * pool.length)];
+                    if (!feats.includes(f)) feats.push(f);
+                }
+                const names = { pillars: 'PILLAR HALL', baffles: 'BAFFLE GALLERY', mezzanine: 'MEZZANINE ATRIUM', lens: 'LENS CHAMBER', monoliths: 'MONOLITH FIELD' };
+                spec = {
+                    type: 'big', height, w: b.w, d: b.d,
+                    cx: (b.x0 + (b.w - 1) / 2) * C, cz: (b.z0 + (b.d - 1) / 2) * C,
+                    seedX: owner.bx * 7 + 1000, seedZ: owner.bz * 7 - 1000,
+                    features: feats, label: `${names[feats[0]]} ${b.w}x${b.d}`
+                };
+            } else {
+                const { gx, gz } = owner;
+                const r = mulberry32(hash3(gx, gz, 3));
+                const roll = r();
+                const base = { w: 1, d: 1, cx: gx * C, cz: gz * C, seedX: gx, seedZ: gz };
+                if (gx === 0 && gz === 0) {
+                    spec = Object.assign(base, { type: 'square', height: 5.4, label: 'ENTRY ATRIUM', vwall: false });
+                } else if (roll < 0.10) {
+                    spec = Object.assign(base, { type: 'closet', height: 5.2, label: 'TINY CUBE', doorSide: Math.floor(r() * 4) });
+                } else if (roll < 0.40) {
+                    const sides = r() < 0.5 ? 8 : 12;
+                    spec = Object.assign(base, { type: 'polygon', sides, height: 5.6 + Math.floor(r() * 3) * 1.2, label: `${sides}-SIDED POLYGON` });
+                } else {
+                    const styles = ['OFFICE BULLPEN', 'GALLERY HALL', 'ARCHIVE VAULT', 'RECEPTION', 'ACUTE CHAMBER'];
+                    const st = Math.floor(r() * styles.length);
+                    spec = Object.assign(base, { type: 'square', height: 5.2 + Math.floor(r() * 3) * 1.4, label: styles[st], vwall: st === 4 || r() < 0.25 });
+                }
+            }
+            roomSpecCache.set(owner.key, spec);
+            return spec;
+        }
+
+        function edgeExists(kind, gx, gz) {
+            const a = getCellOwner(gx, gz).key;
+            const b = kind === 'X' ? getCellOwner(gx + 1, gz).key : getCellOwner(gx, gz + 1).key;
+            return a !== b;
+        }
+
+        // ---------- chunk context ----------
+        function newCtx(group) {
+            return { group, meshes: [], colliders: [], glass: [], glowables: [], npcs: [], doors: [], emitters: [] };
+        }
+        function addSolid(ctx, mesh, halfExtents, parent = ctx.group) {
+            parent.add(mesh);
+            ctx.meshes.push(mesh);
+            if (halfExtents) ctx.colliders.push({ mesh, halfExtents: halfExtents.clone() });
+        }
+        function registerChunk(ctx) {
+            ctx.meshes.forEach((m) => destructibleMeshes.push(m));
+            ctx.colliders.forEach((c) => solidColliders.push(c));
+            ctx.glass.forEach((g) => glassObjects.push(g));
+            ctx.glowables.forEach((g) => glowables.push(g));
+            ctx.npcs.forEach((n) => roomPeople.push(n));
+            ctx.doors.forEach((d) => interactiveDoors.push(d));
+            ctx.group.updateMatrixWorld(true);
+            ctx.emitters.forEach((e) => { e.pos.copy(e.local).applyMatrix4(ctx.group.matrixWorld); doorEmitters.push(e); });
+        }
+        function unloadChunk(ctx) {
+            scene.remove(ctx.group);
+            ctx.meshes.forEach((m) => { m.userData.dead = true; });
+            ctx.colliders.forEach((c) => { c.dead = true; });
+            ctx.npcs.forEach((n) => { n.dead = true; });
+            ctx.doors.forEach((d) => { d.dead = true; });
+            ctx.emitters.forEach((e) => { e.dead = true; });
+            ctx.group.traverse((o) => {          // free GPU memory (was leaking on every unload)
+                if (o.geometry) o.geometry.dispose();
+                if (o.material) {
+                    (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (!m.userData.shared) m.dispose(); });
+                }
+            });
+        }
+        function filterInPlace(arr, keep) {
+            let j = 0;
+            for (let i = 0; i < arr.length; i++) if (keep(arr[i])) arr[j++] = arr[i];
+            arr.length = j;
+        }
+        function purgeRegistries() {
+            filterInPlace(destructibleMeshes, (m) => !m.userData.dead);
+            filterInPlace(glassObjects, (m) => !m.userData.dead);
+            filterInPlace(glowables, (m) => !m.userData.dead);
+            filterInPlace(solidColliders, (c) => !c.dead);
+            filterInPlace(roomPeople, (n) => !n.dead);
+            filterInPlace(interactiveDoors, (d) => !d.dead);
+            filterInPlace(doorEmitters, (e) => !e.dead);
+            worldVersion++;
+        }
+
+        // ---------- walls & doors ----------
+        // Straight wall from (x1,z1) to (x2,z2) in chunk-local space.
+        // opts: { height, thick, door: null|'open'|'blue'|'red', doorAt (distance from p1 to door centre) }
+        function buildWallSegment(ctx, x1, z1, x2, z2, opts) {
+            const height = opts.height;
+            const thick = opts.thick || CONFIG.WALL_THICKNESS;
+            const dx = x2 - x1, dz = z2 - z1;
+            const len = Math.hypot(dx, dz);
+            if (len < 0.05) return;
+            const ux = dx / len, uz = dz / len;
+            const angle = Math.atan2(dx, dz);
+            const DW = CONFIG.DOOR_WIDTH, DH = CONFIG.DOOR_HEIGHT;
+            const piece = (a, b, y0, y1) => {
+                const L = b - a;
+                if (L < 0.02 || y1 - y0 < 0.02) return;
+                const mid = (a + b) / 2;
+                const m = createDeformableBox(thick, y1 - y0, L, 'wall', 1020);
+                m.position.set(x1 + ux * mid, (y0 + y1) / 2, z1 + uz * mid);
+                m.rotation.y = angle;
+                addSolid(ctx, m, new V3(thick / 2, (y1 - y0) / 2, L / 2));
+            };
+            const door = opts.door;
+            const doorAt = opts.doorAt !== undefined ? opts.doorAt : len / 2;
+            if (!door || doorAt - DW / 2 < 0.2 || doorAt + DW / 2 > len - 0.2) { piece(0, len, 0, height); return; }
+            piece(0, doorAt - DW / 2, 0, height);
+            piece(doorAt + DW / 2, len, 0, height);
+            if (height > DH + 0.02) piece(doorAt - DW / 2, doorAt + DW / 2, DH, height);
+            if (door === 'open') return;
+
+            const cx = x1 + ux * doorAt, cz = z1 + uz * doorAt;
+            const frameMat = door === 'red' ? MAT.frameRed : MAT.frameBlue;
+            const jambGeo = new THREE.BoxGeometry(thick + 0.06, DH, 0.1);
+            [-1, 1].forEach((side) => {
+                const j = new THREE.Mesh(jambGeo, frameMat);
+                j.position.set(cx + ux * side * (DW / 2 - 0.05), DH / 2, cz + uz * side * (DW / 2 - 0.05));
+                j.rotation.y = angle;
+                ctx.group.add(j);
+            });
+            const lintel = new THREE.Mesh(new THREE.BoxGeometry(thick + 0.06, 0.1, DW), frameMat);
+            lintel.position.set(cx, DH - 0.05, cz); lintel.rotation.y = angle; ctx.group.add(lintel);
+            const thr = new THREE.Mesh(new THREE.BoxGeometry(thick + 0.1, 0.03, DW), frameMat);
+            thr.position.set(cx, 0.015, cz); thr.rotation.y = angle; ctx.group.add(thr);
+            ctx.emitters.push({ local: new V3(cx, DH * 0.62, cz), color: door === 'red' ? 0xff2a2a : 0x2f6bff, pos: new V3() });
+
+            if (door === 'red') {
+                // Sinking door: drops into the floor when opened (never clips walls or ceilings)
+                const slab = createDeformableBox(0.24, DH - 0.04, DW - 0.12, 'door', 1020);
+                slab.position.set(cx, DH / 2, cz);
+                slab.rotation.y = angle;
+                const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.08, DW - 0.5), MAT.frameRed);
+                stripe.position.y = 0.25;
+                slab.add(stripe);
+                addSolid(ctx, slab, new V3(0.12, (DH - 0.04) / 2, (DW - 0.12) / 2));
+                ctx.doors.push({ slab, baseY: DH / 2, openT: 0, isOpen: false });
+            }
+        }
+
+        function buildFloorCeiling(ctx, w, d, height) {
+            const floor = createDeformableBox(w, 0.6, d, 'floor', 999999);
+            floor.position.set(0, -0.3, 0);
+            floor.userData.isFloorBase = true;
+            addSolid(ctx, floor, null);              // ground plane at y=0 handles walking
+            const ceil = createDeformableBox(w, 0.6, d, 'ceil', 1020);
+            ceil.position.set(0, height + 0.3, 0);
+            addSolid(ctx, ceil, new V3(w / 2, 0.3, d / 2));
+        }
+
+        // ---------- placement (rejection sampling with spacing + door-lane keep-outs) ----------
+        function makePlacer(rand, area, keepouts) {
+            const placed = [];
+            const inArea = (x, z, rad) => area.type === 'rect'
+                ? (Math.abs(x) <= area.hx - rad && Math.abs(z) <= area.hz - rad)
+                : Math.hypot(x, z) <= area.r - rad;
+            const clear = (x, z, rad) => {
+                for (const k of keepouts) {
+                    if (k.r !== undefined) { if (Math.hypot(x - k.x, z - k.z) < k.r + rad) return false; }
+                    else if (x + rad > k.x0 && x - rad < k.x1 && z + rad > k.z0 && z - rad < k.z1) return false;
+                }
+                for (const p of placed) if (Math.hypot(x - p.x, z - p.z) < p.r + rad + 0.5) return false;
+                return true;
+            };
+            return {
+                canPlace: (x, z, rad) => inArea(x, z, rad) && clear(x, z, rad),
+                place(rad, tries = 18) {
+                    const ex = area.type === 'rect' ? area.hx : area.r;
+                    const ez = area.type === 'rect' ? area.hz : area.r;
+                    for (let i = 0; i < tries; i++) {
+                        const x = (rand() * 2 - 1) * ex, z = (rand() * 2 - 1) * ez;
+                        if (inArea(x, z, rad) && clear(x, z, rad)) { placed.push({ x, z, r: rad }); return { x, z }; }
+                    }
+                    return null;
+                },
+                reserve(x, z, r) { placed.push({ x, z, r }); },
+                reserveRect(x0, x1, z0, z1) { keepouts.push({ x0, x1, z0, z1 }); }
+            };
+        }
+
+        function laneKeepouts(halfW, halfD, w, d) {
+            const C = CONFIG.CELL_SIZE, L = 4.6, H = 2.8, k = [];
+            for (let i = 0; i < w; i++) {
+                const x = -halfW + C * (i + 0.5);
+                k.push({ x0: x - H, x1: x + H, z0: -halfD, z1: -halfD + L });
+                k.push({ x0: x - H, x1: x + H, z0: halfD - L, z1: halfD });
+            }
+            for (let j = 0; j < d; j++) {
+                const z = -halfD + C * (j + 0.5);
+                k.push({ x0: -halfW, x1: -halfW + L, z0: z - H, z1: z + H });
+                k.push({ x0: halfW - L, x1: halfW, z0: z - H, z1: z + H });
+            }
+            return k;
+        }
+
+        // ---------- props ----------
+        function spawnShapeProp(ctx, rand, x, z, height, forceCeil = false) {
+            const spec = createGeometricShapeSpec(rand);
+            const m = createPropMesh(spec.geom, 0xe2e8f0, 280);
+            if (forceCeil || rand() < 0.4) { m.position.set(x, height - spec.dims.y, z); m.rotation.z = Math.PI; }
+            else m.position.set(x, spec.dims.y, z);
+            m.rotation.y = rand() * Math.PI * 2;
+            addSolid(ctx, m, spec.dims);
+            ctx.glowables.push(m);
+        }
+
+        function spawnOfficePerson(ctx, x, y, z, yaw, rand, bounds) {
+            const g = new THREE.Group();
+            g.position.set(x, y, z);
+            g.rotation.y = yaw;
+            const suits = [0x1e293b, 0x334155, 0x3f3f46, 0x1f2937, 0x27272a];
+            const skins = [0xf1c27d, 0xe0ac69, 0xc68642, 0x8d5524, 0xffdbac];
+            const suit = suits[Math.floor(rand() * suits.length)];
+            const skin = skins[Math.floor(rand() * skins.length)];
+            const rec = { mesh: g, vel: new V3(), baseY: y, lastYelpTime: 0, bounds };
+            const part = (geom, col, px, py, pz) => {
+                const m = createPropMesh(geom, col, 999999, false);
+                m.userData.glowable = false;
+                m.position.set(px, py, pz);
+                m.userData.isPersonPart = true;
+                m.userData.npcRecord = rec;
+                g.add(m);
+                ctx.meshes.push(m);
+            };
+            part(new THREE.BoxGeometry(0.46, 0.68, 0.24, 3, 4, 2), suit, 0, 0.72, 0);
+            part(new THREE.BoxGeometry(0.24, 0.26, 0.24, 2, 2, 2), skin, 0, 1.22, 0);
+            part(new THREE.BoxGeometry(0.16, 0.44, 0.2, 2, 2, 2), suit, -0.12, 0.22, 0.14);
+            part(new THREE.BoxGeometry(0.16, 0.44, 0.2, 2, 2, 2), suit, 0.12, 0.22, 0.14);
+            ctx.group.add(g);
+            ctx.npcs.push(rec);
+        }
+
+        function spawnDesk(ctx, rand, x, z, bounds) {
+            const desk = createPropMesh(new THREE.BoxGeometry(2.4, 0.85, 1.1, 5, 2, 3), 0xd7dde5, 240);
+            desk.position.set(x, 0.425, z);
+            desk.rotation.y = Math.floor(rand() * 4) * Math.PI / 4;
+            addSolid(ctx, desk, new V3(1.2, 0.425, 0.55));
+            ctx.glowables.push(desk);
+            if (rand() < 0.23) {
+                const offX = -Math.sin(desk.rotation.y) * 0.95, offZ = -Math.cos(desk.rotation.y) * 0.95;
+                spawnOfficePerson(ctx, x + offX, 0, z + offZ, desk.rotation.y, rand, bounds);
+            }
+        }
+
+        function addGlass(ctx, mesh, dims) {
+            addSolid(ctx, mesh, dims);
+            ctx.glass.push(mesh);
+            ctx.glowables.push(mesh);
+        }
+
+        function spawnGlass(ctx, rand, x, z, height, specOverride) {
+            const spec = specOverride || createGlassSpec(rand);
+            const mesh = createGlassMesh(spec.geom, spec.analytic);
+            let y = spec.dims.y;
+            if (spec.kind === 'sphere' && rand() < 0.65) {
+                // pedestal lifts lenses to beam height
+                const pedH = 0.6 + rand() * 0.9;
+                const ped = createPropMesh(new THREE.CylinderGeometry(0.26, 0.34, pedH, 8, 1), 0xcbd5e1, 400);
+                ped.position.set(x, pedH / 2, z);
+                addSolid(ctx, ped, new V3(0.3, pedH / 2, 0.3));
+                ctx.glowables.push(ped);
+                y = pedH + spec.dims.y - 0.06;
+            } else if (spec.kind !== 'pane' && rand() < 0.22) {
+                y = height - spec.dims.y;
+            }
+            mesh.position.set(x, y, z);
+            mesh.rotation.y = rand() * Math.PI * 2;
+            addGlass(ctx, mesh, spec.dims);
+        }
+
+        function populateProps(ctx, rand, placer, height, dens, areaMul, npcBounds) {
+            const nShapes = Math.round((3 + Math.floor(rand() * 4)) * dens * areaMul);
+            for (let i = 0; i < nShapes; i++) { const p = placer.place(1.2); if (p) spawnShapeProp(ctx, rand, p.x, p.z, height); }
+            const nDesks = Math.round((1 + Math.floor(rand() * 2)) * dens * areaMul);
+            for (let i = 0; i < nDesks; i++) { const p = placer.place(1.5); if (p) spawnDesk(ctx, rand, p.x, p.z, npcBounds); }
+            const nGlass = Math.round((4 + Math.floor(rand() * 3)) * dens * areaMul);
+            for (let i = 0; i < nGlass; i++) { const p = placer.place(1.1); if (p) spawnGlass(ctx, rand, p.x, p.z, height); }
+        }
+
+        // ---------- room layouts ----------
+        function buildSquareRoom(ctx, spec, rand, dens, lanes, npcBounds) {
+            const half = CONFIG.CELL_SIZE / 2;
+            const placer = makePlacer(rand, { type: 'rect', hx: half - 1.0, hz: half - 1.0 }, lanes.concat([{ x: 0, z: 0, r: 2.8 }]));
+            if (spec.vwall) {
+                const vLen = 4.2, vAngle = 0.38;
+                [-1, 1].forEach((side) => {
+                    const w = createPropMesh(new THREE.BoxGeometry(0.5, 3.4, vLen, 1, 4, 5), 0xf1f5f9, 1020);
+                    w.position.set(side * 1.1, 1.7, -4.2);
+                    w.rotation.y = side * vAngle;
+                    addSolid(ctx, w, new V3(0.25, 1.7, vLen / 2));
+                    ctx.glowables.push(w);
+                });
+                placer.reserve(0, -4.2, 2.6);
+            }
+            populateProps(ctx, rand, placer, spec.height, dens, 1, npcBounds);
+        }
+
+        // 8/12-gons: an edge midpoint faces every cardinal direction, and a short vestibule
+        // links that doorway to the cell-edge door, so polygon rooms always connect to neighbours.
+        function buildPolygonRoom(ctx, spec, rand, dens) {
+            const C = CONFIG.CELL_SIZE, n = spec.sides, t = CONFIG.WALL_THICKNESS;
+            const apo = C / 2 - 1.6;
+            const R = apo / Math.cos(Math.PI / n);
+            const pts = [];
+            for (let i = 0; i < n; i++) {
+                const th = (2 * i + 1) * Math.PI / n;
+                pts.push({ x: Math.sin(th) * R, z: Math.cos(th) * R });
+            }
+            for (let i = 0; i < n; i++) {
+                const p1 = pts[i], p2 = pts[(i + 1) % n];
+                const cardinal = ((i + 1) * 4) % n === 0;
+                buildWallSegment(ctx, p1.x, p1.z, p2.x, p2.z, { height: spec.height, door: cardinal ? 'open' : null });
+            }
+            pts.forEach((p) => {   // corner posts seal the outside wedge of every joint
+                const post = createDeformableBox(t * 1.05, spec.height, t * 1.05, 'wall', 1020);
+                post.position.set(p.x, spec.height / 2, p.z);
+                post.rotation.y = Math.atan2(p.x, p.z);
+                addSolid(ctx, post, new V3(t * 0.525, spec.height / 2, t * 0.525));
+            });
+            const lat = CONFIG.DOOR_WIDTH / 2 + t / 2 + 0.05;
+            const r0 = apo, r1 = C / 2 - t / 2 + 0.02;
+            [[0, 1], [1, 0], [0, -1], [-1, 0]].forEach(([ux, uz]) => {
+                const px = uz, pz = -ux;
+                [-1, 1].forEach((side) => {
+                    const ox = px * side * lat, oz = pz * side * lat;
+                    buildWallSegment(ctx, ux * r0 + ox, uz * r0 + oz, ux * r1 + ox, uz * r1 + oz, { height: spec.height });
+                });
+            });
+            const placer = makePlacer(rand, { type: 'circle', r: apo - 1.4 }, [{ x: 0, z: 0, r: 2.6 }]);
+            populateProps(ctx, rand, placer, spec.height, dens, 0.85, { hx: apo * 0.66, hz: apo * 0.66 });
+        }
+
+        // A small lockable cube in the middle of a normal cell, with a lens inside
+        function buildClosetRoom(ctx, spec, rand, dens, lanes, npcBounds) {
+            const s = 2.8, t = 0.5, h = 4.2;
+            const segs = [[-s, -s, s, -s], [s, s, -s, s], [-s, s, -s, -s], [s, -s, s, s]];
+            segs.forEach((sg, i) => {
+                let [x1, z1, x2, z2] = sg;
+                const len = Math.hypot(x2 - x1, z2 - z1), ux = (x2 - x1) / len, uz = (z2 - z1) / len;
+                const adj = i < 2 ? t / 2 : -t / 2;      // x-walls run full, z-walls abut them (no coplanar faces)
+                x1 -= ux * adj; z1 -= uz * adj; x2 += ux * adj; z2 += uz * adj;
+                buildWallSegment(ctx, x1, z1, x2, z2, { height: h, thick: t, door: i === spec.doorSide ? 'red' : null });
+            });
+            const roof = createDeformableBox(2 * s + t, 0.3, 2 * s + t, 'ceil', 1020);
+            roof.position.set(0, h + 0.15, 0);
+            addSolid(ctx, roof, new V3(s + t / 2, 0.15, s + t / 2));
+            const rad = 0.75;
+            spawnGlass(ctx, () => 0.1, 0, 0, h, {
+                kind: 'sphere', geom: new THREE.SphereGeometry(rad, 40, 28), dims: new V3(rad, rad, rad),
+                analytic: { analytic: 'sphere', radius: rad }
+            });
+            const placer = makePlacer(rand, { type: 'rect', hx: CONFIG.CELL_SIZE / 2 - 1, hz: CONFIG.CELL_SIZE / 2 - 1 }, lanes.concat([{ x: 0, z: 0, r: 5.2 }]));
+            populateProps(ctx, rand, placer, spec.height, dens, 0.7, npcBounds);
+        }
+
+        function buildMezzanine(ctx, spec, rand, placer) {
+            const C = CONFIG.CELL_SIZE;
+            const halfW = spec.w * C / 2, halfD = spec.d * C / 2;
+            const deck = 3.9, depth = 3.2, slab = 0.3, rise = 0.39, run = 0.6, inset = 0.4;
+            const steps = Math.round(deck / rise);
+            const alongX = halfW >= halfD;
+            const sideSign = rand() < 0.5 ? -1 : 1;
+            const wallLen = alongX ? spec.w * C : spec.d * C;
+            const halfAcross = alongX ? halfD : halfW;
+            // (u along wall, v inward from wall) -> local x,z
+            const place = (mesh, u, v, y) => {
+                if (alongX) mesh.position.set(u, y, sideSign * (halfAcross - v));
+                else mesh.position.set(sideSign * (halfAcross - v), y, u);
+            };
+            const box = (lenU, h, lenV) => alongX ? [lenU, h, lenV] : [lenV, h, lenU];
+            const he = (lenU, h, lenV) => { const b = box(lenU, h, lenV); return new V3(b[0] / 2, b[1] / 2, b[2] / 2); };
+            const u0 = -wallLen / 2 + inset;
+            for (let i = 0; i < steps; i++) {
+                const sh = (i + 1) * rise;
+                const dims = box(run, sh, depth);
+                const step = createPropMesh(new THREE.BoxGeometry(dims[0], dims[1], dims[2], 1, 1, 1), 0xe5e7eb, 2000);
+                place(step, u0 + run * (i + 0.5), inset + depth / 2, sh / 2);
+                addSolid(ctx, step, he(run, sh, depth));
+            }
+            const deckU0 = u0 + steps * run, deckU1 = wallLen / 2 - inset;
+            const deckLen = deckU1 - deckU0;
+            const dd = box(deckLen, slab, depth);
+            const deckMesh = createPropMesh(new THREE.BoxGeometry(dd[0], dd[1], dd[2], 4, 1, 2), 0xe5e7eb, 3000);
+            place(deckMesh, (deckU0 + deckU1) / 2, inset + depth / 2, deck - slab / 2);
+            addSolid(ctx, deckMesh, he(deckLen, slab, depth));
+            // glass railing panes along the deck edge (refracting balustrade)
+            for (let u = deckU0 + 0.3; u + 2.4 < deckU1; u += 3.0) {
+                const pd = box(2.4, 1.0, 0.1);
+                const pane = createGlassMesh(new THREE.BoxGeometry(pd[0], pd[1], pd[2]));
+                place(pane, u + 1.2, inset + depth - 0.08, deck + 0.5);
+                addGlass(ctx, pane, he(2.4, 1.0, 0.1));
+            }
+            // keep floor props out from under the stairs/deck
+            const u = [u0, deckU1], v = [halfAcross - inset - depth - 0.6, halfAcross];
+            if (alongX) placer.reserveRect(u[0], u[1], sideSign > 0 ? v[0] : -v[1], sideSign > 0 ? v[1] : -v[0]);
+            else placer.reserveRect(sideSign > 0 ? v[0] : -v[1], sideSign > 0 ? v[1] : -v[0], u[0], u[1]);
+        }
+
+        function buildBigRoom(ctx, spec, rand, dens, lanes, npcBounds) {
+            const C = CONFIG.CELL_SIZE, H = spec.height;
+            const halfW = spec.w * C / 2, halfD = spec.d * C / 2;
+            const placer = makePlacer(rand, { type: 'rect', hx: halfW - 1.2, hz: halfD - 1.2 }, lanes.slice());
+            const f = spec.features;
+            if (f.includes('lens')) {
+                const rad = 1.3 + rand() * 0.5, plinthH = 1.0;
+                const plinth = createPropMesh(new THREE.CylinderGeometry(1.1, 1.3, plinthH, 12, 1), 0xcbd5e1, 1500);
+                plinth.position.set(0, plinthH / 2, 0);
+                addSolid(ctx, plinth, new V3(1.1, plinthH / 2, 1.1));
+                ctx.glowables.push(plinth);
+                const lens = createGlassMesh(new THREE.SphereGeometry(rad, 56, 36), { analytic: 'sphere', radius: rad });
+                lens.position.set(0, plinthH + rad, 0);
+                addGlass(ctx, lens, new V3(rad, rad, rad));
+                placer.reserve(0, 0, rad + 1.6);
+            }
+            if (f.includes('mezzanine')) buildMezzanine(ctx, spec, rand, placer);
+            if (f.includes('pillars')) {
+                const step = 5.5 + rand() * 1.5;
+                for (let x = -halfW + step; x < halfW - step * 0.5; x += step) {
+                    for (let z = -halfD + step; z < halfD - step * 0.5; z += step) {
+                        if (rand() < 0.25 || !placer.canPlace(x, z, 0.9)) continue;
+                        const pillar = createPropMesh(new THREE.BoxGeometry(1.1, H, 1.1, 1, 6, 1), 0xf1f5f9, 1500);
+                        pillar.position.set(x, H / 2, z);
+                        pillar.rotation.y = Math.PI / 4 + (rand() < 0.3 ? rand() * 0.5 : 0);
+                        addSolid(ctx, pillar, new V3(0.55, H / 2, 0.55));
+                        ctx.glowables.push(pillar);
+                        placer.reserve(x, z, 0.9);
+                    }
+                }
+            }
+            if (f.includes('baffles')) {
+                const alongX = halfW >= halfD;
+                const n = Math.floor((alongX ? halfW : halfD) * 2 / 5.5);
+                const offset = (rand() - 0.5) * (alongX ? halfD : halfW) * 0.6;
+                for (let i = 0; i < n; i++) {
+                    const t = -((n - 1) / 2) * 5.5 + i * 5.5;
+                    const x = alongX ? t : offset, z = alongX ? offset : t;
+                    if (!placer.canPlace(x, z, 2.0)) continue;
+                    const panel = createPropMesh(new THREE.BoxGeometry(0.35, 3.2, 4.2, 1, 4, 5), 0xf8fafc, 1020);
+                    panel.position.set(x, 1.6, z);
+                    panel.rotation.y = (alongX ? Math.PI / 2 : 0) + (i % 2 ? 0.6 : -0.6);
+                    addSolid(ctx, panel, new V3(0.175, 1.6, 2.1));
+                    ctx.glowables.push(panel);
+                    placer.reserve(x, z, 2.0);
+                }
+            }
+            if (f.includes('monoliths')) {
+                const n = Math.round((4 + rand() * 4) * dens);
+                for (let i = 0; i < n; i++) {
+                    const p = placer.place(1.4);
+                    if (!p) continue;
+                    const mh = 3 + rand() * (H - 4);
+                    const m = createPropMesh(new THREE.BoxGeometry(0.3, mh, 2.0, 1, 5, 3), 0xe5e7eb, 1200);
+                    m.position.set(p.x, mh / 2, p.z);
+                    m.rotation.y = rand() * Math.PI;
+                    addSolid(ctx, m, new V3(0.15, mh / 2, 1.0));
+                    ctx.glowables.push(m);
+                }
+            }
+            const nHang = Math.round((3 + rand() * 4) * dens);
+            for (let i = 0; i < nHang; i++) {
+                const x = (rand() * 2 - 1) * (halfW - 2), z = (rand() * 2 - 1) * (halfD - 2);
+                spawnShapeProp(ctx, rand, x, z, H, true);
+            }
+            populateProps(ctx, rand, placer, H, dens, spec.w * spec.d * 0.7, npcBounds);
+        }
+
+        function generateRoom(owner) {
+            if (roomsMap.has(owner.key)) return;
+            const spec = getRoomSpec(owner);
+            const rand = mulberry32(hash3(spec.seedX, spec.seedZ, 5));
+            const C = CONFIG.CELL_SIZE;
+            const group = new THREE.Group();
+            group.position.set(spec.cx, 0, spec.cz);
+            const ctx = newCtx(group);
+            const halfW = spec.w * C / 2, halfD = spec.d * C / 2;
+            buildFloorCeiling(ctx, spec.w * C, spec.d * C, spec.height);
+            const lanes = laneKeepouts(halfW, halfD, spec.w, spec.d);
+            const npcBounds = { hx: halfW - 1.2, hz: halfD - 1.2 };
+            const dens = CONFIG.DENSITY;
+            if (spec.type === 'polygon') buildPolygonRoom(ctx, spec, rand, dens);
+            else if (spec.type === 'closet') buildClosetRoom(ctx, spec, rand, dens, lanes, npcBounds);
+            else if (spec.type === 'big') buildBigRoom(ctx, spec, rand, dens, lanes, npcBounds);
+            else buildSquareRoom(ctx, spec, rand, dens, lanes, npcBounds);
+            scene.add(group);
+            registerChunk(ctx);
+            roomsMap.set(owner.key, { ctx, spec });
+        }
+
+        // Shared wall between two cells. X-edge: between (gx,gz) and (gx+1,gz). Z-edge: between (gx,gz) and (gx,gz+1).
+        // End trimming/extension makes walls meet at corners with no gaps and no coplanar overlap.
+        function generateEdge(kind, gx, gz) {
+            const key = `${kind}${gx},${gz}`;
+            if (edgesMap.has(key)) return;
+            const C = CONFIG.CELL_SIZE, t = CONFIG.WALL_THICKNESS;
+            const a = getCellOwner(gx, gz);
+            const b = kind === 'X' ? getCellOwner(gx + 1, gz) : getCellOwner(gx, gz + 1);
+            if (a.key === b.key) { edgesMap.set(key, null); return; }
+            const h = Math.max(getRoomSpec(a).height, getRoomSpec(b).height);
+            const r = mulberry32(hash3(gx * 2 + (kind === 'X' ? 1 : 0), gz, 21));
+            const touchesOrigin = (kind === 'X' && gz === 0 && (gx === -1 || gx === 0)) || (kind === 'Z' && gx === 0 && (gz === -1 || gz === 0));
+            let door = r() < CONFIG.RED_DOOR_CHANCE ? 'red' : 'blue';
+            if (!touchesOrigin && r() < CONFIG.SOLID_EDGE_CHANCE) door = null;
+            const group = new THREE.Group();
+            const ctx = newCtx(group);
+            if (kind === 'X') {
+                group.position.set((gx + 0.5) * C, 0, gz * C);
+                const ext0 = (edgeExists('Z', gx, gz - 1) || edgeExists('Z', gx + 1, gz - 1)) && !edgeExists('X', gx, gz - 1) ? t / 2 : 0;
+                const ext1 = (edgeExists('Z', gx, gz) || edgeExists('Z', gx + 1, gz)) && !edgeExists('X', gx, gz + 1) ? t / 2 : 0;
+                const z0 = -C / 2 - ext0, z1 = C / 2 + ext1;
+                buildWallSegment(ctx, 0, z0, 0, z1, { height: h, door, doorAt: -z0 });
+            } else {
+                group.position.set(gx * C, 0, (gz + 0.5) * C);
+                const sh0 = edgeExists('X', gx - 1, gz) || edgeExists('X', gx - 1, gz + 1) ? t / 2 : 0;
+                const sh1 = edgeExists('X', gx, gz) || edgeExists('X', gx, gz + 1) ? t / 2 : 0;
+                const x0 = -C / 2 + sh0, x1 = C / 2 - sh1;
+                buildWallSegment(ctx, x0, 0, x1, 0, { height: h, door, doorAt: -x0 });
+            }
+            scene.add(group);
+            registerChunk(ctx);
+            edgesMap.set(key, ctx);
+        }
+
+        const genQueue = [];
+        function pumpGeneration(budgetMs) {
+            const t0 = performance.now();
+            while (genQueue.length && (genQueue[0].d < 12 || performance.now() - t0 < budgetMs)) {
+                const job = genQueue.shift();
+                if (job.room) generateRoom(job.room);
+                else generateEdge(job.kind, job.ex, job.ez);
+            }
+        }
+
+        let lastPlayerGx = null, lastPlayerGz = null;
+        function updateProceduralRooms(force = false) {
+            const C = CONFIG.CELL_SIZE;
+            const gx = Math.round(state.player.pos.x / C), gz = Math.round(state.player.pos.z / C);
+            if (!force && gx === lastPlayerGx && gz === lastPlayerGz) return;
+            lastPlayerGx = gx; lastPlayerGz = gz;
+            const R = CONFIG.STREAM_RADIUS;
+            const needRooms = new Map(), needEdges = new Set();
+            for (let dx = -R; dx <= R; dx++) {
+                for (let dz = -R; dz <= R; dz++) {
+                    const cx = gx + dx, cz = gz + dz;
+                    const o = getCellOwner(cx, cz);
+                    needRooms.set(o.key, o);
+                    needEdges.add(`X${cx},${cz}`); needEdges.add(`X${cx - 1},${cz}`);
+                    needEdges.add(`Z${cx},${cz}`); needEdges.add(`Z${cx},${cz - 1}`);
+                }
+            }
+            // Queue generation nearest-first; anything within ~12 m is built immediately, the rest is
+            // time-sliced across frames (no more 20-40 ms hitch every time you cross a cell boundary).
+            const px = state.player.pos.x, pz = state.player.pos.z;
+            genQueue.length = 0;
+            needRooms.forEach((o) => {
+                if (roomsMap.has(o.key)) return;
+                const s = getRoomSpec(o);
+                const dx = Math.max(0, Math.abs(px - s.cx) - s.w * C / 2), dz = Math.max(0, Math.abs(pz - s.cz) - s.d * C / 2);
+                genQueue.push({ room: o, d: Math.hypot(dx, dz) });
+            });
+            needEdges.forEach((k) => {
+                if (edgesMap.has(k)) return;
+                const [ex, ez] = k.slice(1).split(',').map(Number);
+                const mx = k[0] === 'X' ? (ex + 0.5) * C : ex * C, mz = k[0] === 'X' ? ez * C : (ez + 0.5) * C;
+                genQueue.push({ kind: k[0], ex, ez, d: Math.max(0, Math.hypot(px - mx, pz - mz) - C / 2) });
+            });
+            genQueue.sort((a, b) => a.d - b.d);
+            pumpGeneration(force ? Infinity : 3);
+            let removed = false;
+            for (const [k, rec] of roomsMap) if (!needRooms.has(k)) { unloadChunk(rec.ctx); roomsMap.delete(k); removed = true; }
+            for (const [k, ctx] of edgesMap) if (!needEdges.has(k)) { if (ctx) unloadChunk(ctx); edgesMap.delete(k); removed = true; }
+            if (removed) purgeRegistries();
+            const spec = getRoomSpec(getCellOwner(gx, gz));
+            document.getElementById('roomTypeDisplay').textContent = spec.label;
+            document.getElementById('cellDisplay').textContent = `${gx}, ${gz}`;
+        }
+
+        function regenerateWorld() {
+            for (const [, rec] of roomsMap) unloadChunk(rec.ctx);
+            for (const [, ctx] of edgesMap) if (ctx) unloadChunk(ctx);
+            roomsMap.clear();
+            edgesMap.clear();
+            purgeRegistries();
+            updateProceduralRooms(true);
+        }
+
+        // ==========================================
+        // 5. WEAPONS, 3P AVATAR, DEFORMATION & PROJECTILES
+        // ==========================================
+        const weaponRig = new THREE.Group();
+        camera.add(weaponRig);
+        const viewModels = {};
+
+        // [1] Laser pointer
+        const laserVM = new THREE.Group();
+        const laserBody = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, 0.24, 12), new THREE.MeshPhongMaterial({ color: 0x1e293b, shininess: 60 }));
+        laserBody.rotation.x = Math.PI / 2;
+        laserVM.add(laserBody);
+        const laserEmitterTip = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 10), new THREE.MeshBasicMaterial({ color: LASER_COLORS[0].hex }));
+        laserEmitterTip.name = 'laserLens';
+        laserEmitterTip.position.set(0, 0, -0.125);
+        laserVM.add(laserEmitterTip);
+        const laserLed = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.008, 0.03), new THREE.MeshBasicMaterial({ color: LASER_COLORS[0].hex }));
+        laserLed.name = 'laserLed';
+        laserLed.position.set(0, 0.024, 0.02);
+        laserVM.add(laserLed);
+        laserVM.position.set(0, -0.17, -0.34);
+        weaponRig.add(laserVM);
+        viewModels[1] = laserVM;
+
+        // [2] Minigun
+        const minigunVM = new THREE.Group();
+        minigunVM.add(new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.12, 0.28), new THREE.MeshPhongMaterial({ color: 0x27272a })));
+        const barrelsGroup = new THREE.Group();
+        barrelsGroup.name = 'minigunBarrels';
+        const barrelMat = new THREE.MeshPhongMaterial({ color: 0x71717a, shininess: 80 });
+        for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            const b = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.36, 8), barrelMat);
+            b.rotation.x = Math.PI / 2;
+            b.position.set(Math.cos(a) * 0.032, Math.sin(a) * 0.032, -0.28);
+            barrelsGroup.add(b);
+        }
+        minigunVM.add(barrelsGroup);
+        minigunVM.position.set(0.28, -0.24, -0.45);
+        minigunVM.visible = false;
+        weaponRig.add(minigunVM);
+        viewModels[2] = minigunVM;
+
+        // [3] Rocket launcher
+        const rocketVM = new THREE.Group();
+        const tubeMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.68, 14), new THREE.MeshPhongMaterial({ color: 0x365314 }));
+        tubeMesh.rotation.x = Math.PI / 2;
+        rocketVM.add(tubeMesh);
+        const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.066, 0.012, 8, 16), new THREE.MeshPhongMaterial({ color: 0x18181b }));
+        muzzleRing.position.z = -0.34;
+        rocketVM.add(muzzleRing);
+        rocketVM.position.set(0.3, -0.22, -0.36);
+        rocketVM.visible = false;
+        weaponRig.add(rocketVM);
+        viewModels[3] = rocketVM;
+
+        // [4] Flashlight (the SpotLight itself lives in the scene, not in the model, so 3P clones don't duplicate it)
+        const flashVM = new THREE.Group();
+        const flBody = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.2, 14), new THREE.MeshPhongMaterial({ color: 0x27272a, shininess: 50 }));
+        flBody.rotation.x = Math.PI / 2;
+        flashVM.add(flBody);
+        const flHead = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.024, 0.06, 16), new THREE.MeshPhongMaterial({ color: 0x3f3f46, shininess: 80 }));
+        flHead.rotation.x = Math.PI / 2;
+        flHead.position.z = -0.12;
+        flashVM.add(flHead);
+        const flLens = new THREE.Mesh(new THREE.CircleGeometry(0.032, 20), new THREE.MeshBasicMaterial({ color: 0xfff4dd }));
+        flLens.name = 'flashLens';
+        flLens.position.z = -0.151;
+        flashVM.add(flLens);
+        flashVM.position.set(0.16, -0.19, -0.36);
+        flashVM.visible = false;
+        weaponRig.add(flashVM);
+        viewModels[4] = flashVM;
+
+        // 3rd-person avatar
+        const playerAvatar = new THREE.Group();
+        const avatarMat = new THREE.MeshPhongMaterial({ color: 0x2563eb });
+        const avTorso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.78, 0.26), avatarMat);
+        avTorso.position.y = 1.24;
+        playerAvatar.add(avTorso);
+        const avHead = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.3, 0.28), new THREE.MeshPhongMaterial({ color: 0xf1c27d }));
+        avHead.position.y = 1.82;
+        playerAvatar.add(avHead);
+        const avLegs = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.84, 0.24), new THREE.MeshPhongMaterial({ color: 0x1e293b }));
+        avLegs.position.y = 0.42;
+        playerAvatar.add(avLegs);
+        playerAvatar.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+        const tpWeaponHolder = new THREE.Group();
+        tpWeaponHolder.position.set(0.32, 1.42, -0.25);
+        playerAvatar.add(tpWeaponHolder);
+
+        function syncThirdPersonWeapon() {
+            while (tpWeaponHolder.children.length > 0) tpWeaponHolder.remove(tpWeaponHolder.children[0]);
+            const clone = viewModels[state.weapon].clone();
+            clone.visible = true;
+            clone.position.set(0, 0, 0);
+            tpWeaponHolder.add(clone);
+        }
+        syncThirdPersonWeapon();
+        playerAvatar.visible = false;
+        scene.add(playerAvatar);
+
+        // Crater deformation: vertices are pushed AWAY from a blast centre just in front of the surface
+        // (a dent), and clamped to a max displacement so thin walls never turn inside-out.
+        const _defInv = new THREE.Matrix4();
+        const _defV = new V3(), _defO = new V3(), _defC = new V3();
+        function deformMeshAtPoint(mesh, worldPoint, worldDir, radius, depth, damage) {
+            if (!mesh || mesh.userData.destroyed || mesh.userData.dead) return;
+            if (mesh.userData.isPersonPart) {
+                const npc = mesh.userData.npcRecord;
+                if (npc) {
+                    const now = performance.now();
+                    if (now - npc.lastYelpTime > 260) { npc.lastYelpTime = now; playNpcYelpSound(); }
+                    const pushDir = npc.mesh.getWorldPosition(new V3()).sub(worldPoint);
+                    pushDir.y = 0;
+                    if (pushDir.lengthSq() > 0.0001) {
+                        pushDir.normalize();
+                        npc.vel.addScaledVector(pushDir, 3.2);
+                        npc.vel.y = Math.max(npc.vel.y, 1.4);
+                    }
+                }
+            } else {
+                mesh.userData.hp -= damage;
+                if (mesh.userData.hp <= 0 && !mesh.userData.isFloorBase) {
+                    mesh.userData.destroyed = true;
+                    mesh.visible = false;
+                    const dIdx = destructibleMeshes.indexOf(mesh);
+                    if (dIdx !== -1) destructibleMeshes.splice(dIdx, 1);
+                    const cIdx = solidColliders.findIndex((c) => c.mesh === mesh);
+                    if (cIdx !== -1) solidColliders.splice(cIdx, 1);
+                    worldVersion++;
+                    return;
+                }
+            }
+            if (mesh.userData.isGlass) return;
+
+            const geom = mesh.geometry;
+            const posAttr = geom.attributes.position;
+            const colAttr = geom.attributes.color;
+            if (!posAttr) return;
+            if (!geom.userData.orig) geom.userData.orig = posAttr.array.slice(0);
+            const orig = geom.userData.orig;
+            const maxDisp = mesh.userData.maxDeform || 0.2;
+
+            mesh.updateMatrixWorld(true);
+            _defInv.copy(mesh.matrixWorld).invert();
+            const localHit = worldPoint.clone().applyMatrix4(_defInv);
+            _defC.copy(worldPoint).addScaledVector(worldDir, -radius * 0.45).applyMatrix4(_defInv); // blast centre
+
+            let modified = false;
+            for (let i = 0; i < posAttr.count; i++) {
+                _defV.fromBufferAttribute(posAttr, i);
+                const dist = _defV.distanceTo(localHit);
+                if (dist >= radius) continue;
+                const f = 1 - dist / radius;
+                const falloff = f * f * (3 - 2 * f);
+                const push = _defV.clone().sub(_defC);
+                if (push.lengthSq() < 1e-6) push.set(0, -1, 0);
+                push.normalize();
+                _defV.addScaledVector(push, depth * falloff);
+                _defO.set(orig[i * 3], orig[i * 3 + 1], orig[i * 3 + 2]);
+                const off = _defV.clone().sub(_defO);
+                if (off.length() > maxDisp) _defV.copy(_defO).addScaledVector(off.normalize(), maxDisp);
+                posAttr.setXYZ(i, _defV.x, _defV.y, _defV.z);
+                if (colAttr) {
+                    colAttr.setXYZ(i, colAttr.getX(i) * (1 - falloff * 0.6), colAttr.getY(i) * (1 - falloff * 0.64), colAttr.getZ(i) * (1 - falloff * 0.66));
+                }
+                modified = true;
+            }
+            if (modified) {
+                posAttr.needsUpdate = true;
+                if (colAttr) colAttr.needsUpdate = true;
+                geom.computeVertexNormals();
+                geom.computeBoundingSphere();
+                if (mesh.userData.edges) mesh.userData.edges.visible = false;
+                worldVersion++;
+            }
+        }
+
+        const projectiles = [];
+        const bulletGeom = new THREE.SphereGeometry(0.045, 6, 6);
+        const bulletMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+
+        function createDetailedRocketMesh() {
+            const g = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.36, 10), new THREE.MeshPhongMaterial({ color: 0x475569 }));
+            body.rotation.x = Math.PI / 2;
+            g.add(body);
+            const nose = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.14, 10), new THREE.MeshPhongMaterial({ color: 0xdc2626, emissive: 0x450a0a }));
+            nose.rotation.x = Math.PI / 2;
+            nose.position.z = 0.25;
+            g.add(nose);
+            const finMat = new THREE.MeshPhongMaterial({ color: 0x1e293b });
+            for (let i = 0; i < 4; i++) {
+                const fin = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.14, 0.09), finMat);
+                fin.position.z = -0.14;
+                fin.rotation.z = (i * Math.PI) / 2;
+                g.add(fin);
+            }
+            const exhaust = new THREE.Mesh(new THREE.SphereGeometry(0.048, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffaa00 }));
+            exhaust.position.z = -0.2;
+            g.add(exhaust);
+            return g;
+        }
+
+        function fireWeapon() {
+            ensureAudio();
+            const origin = new V3();
+            if (!state.isThirdPerson) camera.getWorldPosition(origin);
+            else tpWeaponHolder.getWorldPosition(origin);
+            const dir = getAimTargetPoint().sub(origin).normalize();
+            if (state.weapon === 2) {
+                state.fireCooldown = 0.065;
+                weaponRecoil = 0.045;
+                cameraShake = 0.015;
+                playMinigunSound();
+                const spread = dir.clone().add(new V3((Math.random() - 0.5) * 0.035, (Math.random() - 0.5) * 0.035, (Math.random() - 0.5) * 0.035)).normalize();
+                const b = new THREE.Mesh(bulletGeom, bulletMat);
+                b.position.copy(origin).addScaledVector(spread, 0.5);
+                scene.add(b);
+                projectiles.push({ mesh: b, vel: spread.multiplyScalar(85), isRocket: false, life: 1.5 });
+            } else if (state.weapon === 3) {
+                state.fireCooldown = 0.24;
+                weaponRecoil = 0.14;
+                cameraShake = 0.06;
+                playRocketLaunchSound();
+                const r = createDetailedRocketMesh();
+                r.position.copy(origin).addScaledVector(dir, 0.6);
+                r.lookAt(r.position.clone().add(dir));
+                scene.add(r);
+                projectiles.push({ mesh: r, vel: dir.multiplyScalar(42), isRocket: true, life: 3.0 });
+            }
+        }
+
+        const projRaycaster = new THREE.Raycaster();
+        const _bs = new THREE.Sphere();
+        function updateProjectiles(dt) {
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
+                p.life -= dt;
+                const step = p.vel.clone().multiplyScalar(dt);
+                const dist = step.length();
+                const dir = step.clone().normalize();
+                projRaycaster.set(p.mesh.position, dir);
+                projRaycaster.far = dist + 0.15;
+                const hits = projRaycaster.intersectObjects(destructibleMeshes, false);
+                if (hits.length > 0 || p.life <= 0) {
+                    if (hits.length > 0) {
+                        const hit = hits[0];
+                        if (p.isRocket) {
+                            playExplosionSound();
+                            cameraShake = Math.max(cameraShake, 0.12);
+                            // splash: use each mesh's bounding sphere, not its centre (big walls were immune before)
+                            const victims = [];
+                            for (let j = 0; j < destructibleMeshes.length; j++) {
+                                const m = destructibleMeshes[j];
+                                if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+                                _bs.copy(m.geometry.boundingSphere).applyMatrix4(m.matrixWorld);
+                                if (_bs.center.distanceTo(hit.point) - _bs.radius < 2.25) victims.push(m);
+                            }
+                            victims.forEach((m) => deformMeshAtPoint(m, hit.point, dir, 2.25, 0.6, 85));
+                        } else {
+                            deformMeshAtPoint(hit.object, hit.point, dir, 0.56, 0.17, 17);
+                        }
+                    }
+                    scene.remove(p.mesh);
+                    projectiles.splice(i, 1);
+                } else {
+                    p.mesh.position.add(step);
+                }
+            }
+        }
+
+        // ==========================================
+        // 6. LASER OPTICS
+        //    The beam is a list of EMISSION RECORDS. A photon emitted at time t sits at
+        //    distance (now - t) * LASER_SPEED along the path traced at emission, and carries
+        //    the color that was selected at t. So color changes travel down the beam, and
+        //    in "speed mode" sweeping the pointer makes the beam bend/whip at laser speed.
+        // ==========================================
+
+        // ---------- screen-space beam ribbons (constant pixel width => never dotted) ----------
+        const BEAM_MAX_SEGS = 12000;
+        const beamPosA = new Float32Array(BEAM_MAX_SEGS * 12);
+        const beamPosB = new Float32Array(BEAM_MAX_SEGS * 12);
+        const beamColor = new Float32Array(BEAM_MAX_SEGS * 12);
+        const beamCorner = new Float32Array(BEAM_MAX_SEGS * 8);
+        const beamIndex = new Uint32Array(BEAM_MAX_SEGS * 6);
+        for (let i = 0; i < BEAM_MAX_SEGS; i++) {
+            const v = i * 4;
+            beamCorner.set([0, -1, 0, 1, 1, -1, 1, 1], i * 8);
+            beamIndex.set([v, v + 1, v + 2, v + 2, v + 1, v + 3], i * 6);
+        }
+        const beamGeo = new THREE.BufferGeometry();
+        const beamAttrA = new THREE.BufferAttribute(beamPosA, 3).setUsage(THREE.DynamicDrawUsage);
+        const beamAttrB = new THREE.BufferAttribute(beamPosB, 3).setUsage(THREE.DynamicDrawUsage);
+        const beamAttrC = new THREE.BufferAttribute(beamColor, 3).setUsage(THREE.DynamicDrawUsage);
+        beamGeo.setAttribute('position', beamAttrA);
+        beamGeo.setAttribute('aB', beamAttrB);
+        beamGeo.setAttribute('aColor', beamAttrC);
+        beamGeo.setAttribute('aCorner', new THREE.BufferAttribute(beamCorner, 2));
+        beamGeo.setIndex(new THREE.BufferAttribute(beamIndex, 1));
+        beamGeo.setDrawRange(0, 0);
+
+        const beamMat = new THREE.ShaderMaterial({
+            uniforms: {
+                uRes: { value: new THREE.Vector2(1, 1) },
+                uProj: { value: 1 },
+                uWorldW: { value: CONFIG.LASER_WORLD_WIDTH },
+                uMinPx: { value: CONFIG.LASER_MIN_PX },
+                uMaxPx: { value: CONFIG.LASER_MAX_PX },
+                uBright: { value: 1 },
+                uAlpha: { value: 1 }
+            },
+            vertexShader: `
+                uniform vec2 uRes; uniform float uProj, uWorldW, uMinPx, uMaxPx;
+                attribute vec3 aB; attribute vec2 aCorner; attribute vec3 aColor;
+                varying vec3 vColor; varying float vSide;
+                void main() {
+                    vec4 a = modelViewMatrix * vec4(position, 1.0);
+                    vec4 b = modelViewMatrix * vec4(aB, 1.0);
+                    float nz = -0.06;
+                    vColor = aColor; vSide = aCorner.y;
+                    if (a.z > nz && b.z > nz) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+                    if (a.z > nz) a = mix(a, b, (nz - a.z) / (b.z - a.z));
+                    else if (b.z > nz) b = mix(b, a, (nz - b.z) / (a.z - b.z));
+                    vec4 ca = projectionMatrix * a, cb = projectionMatrix * b;
+                    vec2 sa = ca.xy / ca.w * uRes * 0.5, sb = cb.xy / cb.w * uRes * 0.5;
+                    vec2 d = sb - sa; float len = length(d);
+                    vec2 dir = len > 1e-4 ? d / len : vec2(1.0, 0.0);
+                    vec2 nrm = vec2(-dir.y, dir.x);
+                    bool isB = aCorner.x > 0.5;
+                    vec4 c = isB ? cb : ca;
+                    float depth = isB ? -b.z : -a.z;
+                    float px = clamp(uWorldW * uProj / max(depth, 1e-3), uMinPx, uMaxPx);
+                    vec2 off = nrm * aCorner.y * px * 0.5 + dir * (isB ? 0.5 : -0.5) * px;
+                    c.xy += off / (uRes * 0.5) * c.w;
+                    gl_Position = c;
+                }`,
+            fragmentShader: `
+                uniform float uBright, uAlpha;
+                varying vec3 vColor; varying float vSide;
+                void main() {
+                    float s = abs(vSide);
+                    float alpha = (1.0 - smoothstep(0.5, 1.0, s)) * uAlpha;
+                    float core = 1.0 - smoothstep(0.0, 0.55, s);
+                    gl_FragColor = vec4(mix(vColor, vec3(1.0), core * 0.42) * uBright, alpha);
+                }`,
+            transparent: true,
+            depthWrite: false,
+            depthTest: true,
+            side: THREE.DoubleSide   // ribbon winding flips with screen direction
+        });
+        const beamMesh = new THREE.Mesh(beamGeo, beamMat);
+        beamMesh.frustumCulled = false;
+        beamMesh.renderOrder = 5;
+        scene.add(beamMesh);
+
+        function updateBeamResolution() {
+            const v = renderer.getDrawingBufferSize(new THREE.Vector2());
+            beamMat.uniforms.uRes.value.copy(v);
+            beamMat.uniforms.uProj.value = (v.y * 0.5) / Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5);
+        }
+
+        let beamCount = 0;
+        const _bc = new THREE.Color();
+        function beamSeg(p, q, hex) {
+            if (beamCount >= BEAM_MAX_SEGS) return;
+            _bc.setHex(hex);
+            const base = beamCount * 12;
+            for (let k = 0; k < 4; k++) {
+                const o = base + k * 3;
+                beamPosA[o] = p.x; beamPosA[o + 1] = p.y; beamPosA[o + 2] = p.z;
+                beamPosB[o] = q.x; beamPosB[o + 1] = q.y; beamPosB[o + 2] = q.z;
+                beamColor[o] = _bc.r; beamColor[o + 1] = _bc.g; beamColor[o + 2] = _bc.b;
+            }
+            beamCount++;
+        }
+        function beamFlush() {
+            const n = beamCount * 12;
+            [beamAttrA, beamAttrB, beamAttrC].forEach((a) => { a.updateRange.offset = 0; a.updateRange.count = n; a.needsUpdate = true; });
+            beamGeo.setDrawRange(0, beamCount * 6);
+            const I = state.laserIntensity;
+            beamMat.uniforms.uBright.value = 0.35 + 0.65 * Math.min(1, I) + 0.15 * Math.max(0, I - 1);
+            beamMat.uniforms.uAlpha.value = Math.min(1, I * 2.5);
+            beamMat.uniforms.uMinPx.value = CONFIG.LASER_MIN_PX * (0.8 + 0.25 * Math.min(I, 3));
+        }
+
+        // ---------- decals: beam contact spots + flashlight caustics ----------
+        function createSpotTexture() {
+            const c = document.createElement('canvas');
+            c.width = c.height = 64;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            g.addColorStop(0, 'rgba(255,255,255,1)');
+            g.addColorStop(0.2, 'rgba(255,255,255,0.8)');
+            g.addColorStop(0.55, 'rgba(255,255,255,0.18)');
+            g.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 64, 64);
+            return new THREE.CanvasTexture(c);
+        }
+        const spotTex = createSpotTexture();
+        const decalGeo = new THREE.PlaneGeometry(1, 1);
+        function makeDecalPool(n, additive) {
+            const pool = [];
+            for (let i = 0; i < n; i++) {
+                const m = new THREE.Mesh(decalGeo, new THREE.MeshBasicMaterial({
+                    map: spotTex, transparent: true, depthWrite: false, fog: false,
+                    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+                    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending
+                }));
+                m.visible = false;
+                m.renderOrder = 4;
+                scene.add(m);
+                pool.push(m);
+            }
+            return pool;
+        }
+        const haloDecals = makeDecalPool(40, false);
+        const coreDecals = makeDecalPool(40, true);
+        const causticDecals = makeDecalPool(CONFIG.CAUSTIC_RAYS, true);
+        const _dTmp = new V3();
+        function placeDecal(d, point, normal, size, hex, opacity) {
+            d.position.copy(point).addScaledVector(normal, 0.01);
+            d.lookAt(_dTmp.copy(d.position).add(normal));
+            d.scale.set(size, size, 1);
+            d.material.color.setHex(hex);
+            d.material.opacity = opacity;
+            d.visible = true;
+        }
+
+        // ---------- ray optics ----------
+        const _ray = new THREE.Raycaster();
+        const _nm = new THREE.Matrix3();
+        const _inv = new THREE.Matrix4();
+        const _lp = new V3();
+
+        // Toggle glass to double-sided only while tracing so rays INSIDE glass hit the exit face
+        // (single-sided glass meant exit refraction never happened before).
+        function setGlassDoubleSided(on) {
+            const side = on ? THREE.DoubleSide : THREE.FrontSide;
+            for (let i = 0; i < glassObjects.length; i++) glassObjects[i].material.side = side;
+        }
+
+        function surfaceNormal(hit, out) {
+            const o = hit.object, ud = o.userData;
+            if (ud.analytic === 'sphere') {
+                const e = o.matrixWorld.elements;
+                return out.set(hit.point.x - e[12], hit.point.y - e[13], hit.point.z - e[14]).normalize();
+            }
+            if (ud.analytic === 'cylinder') {
+                _inv.copy(o.matrixWorld).invert();
+                _lp.copy(hit.point).applyMatrix4(_inv);
+                if (Math.abs(_lp.y) > ud.halfH - 0.004) out.set(0, Math.sign(_lp.y), 0);
+                else out.set(_lp.x, 0, _lp.z).normalize();
+                return out.transformDirection(o.matrixWorld);
+            }
+            _nm.getNormalMatrix(o.matrixWorld);
+            return out.copy(hit.face.normal).applyMatrix3(_nm).normalize();
+        }
+
+        function refractDir(I, N, eta) {      // N faces against I
+            const cosI = -N.dot(I);
+            const sinT2 = eta * eta * (1 - cosI * cosI);
+            if (sinT2 > 1) return null;      // total internal reflection
+            const cosT = Math.sqrt(1 - sinT2);
+            return I.clone().multiplyScalar(eta).addScaledVector(N, eta * cosI - cosT).normalize();
+        }
+
+        // Polyline: pts, cum (distance along), objs (object hit at vertex), nrms (normal facing incoming ray)
+        function traceBeam(origin, dir, targets = destructibleMeshes, maxBounces = state.laserBounces, maxRange = CONFIG.LASER_MAX_RANGE, maxGlass = 24) {
+            const pts = [origin.clone()], cum = [0], objs = [null], nrms = [null];
+            let o = origin.clone(), d = dir.clone(), total = 0, bounces = 0, glassSteps = 0, inside = null, passedGlass = false;
+            for (let step = 0; step < maxBounces + maxGlass + 1; step++) {
+                _ray.set(o, d);
+                _ray.far = maxRange - total;
+                if (_ray.far <= 0.01) break;
+                const hit = _ray.intersectObjects(targets, false)[0];
+                if (!hit) {
+                    pts.push(o.clone().addScaledVector(d, _ray.far));
+                    total = maxRange; cum.push(total); objs.push(null); nrms.push(null);
+                    break;
+                }
+                total += hit.distance;
+                const n = surfaceNormal(hit, new V3());
+                if (n.dot(d) > 0) n.negate();
+                pts.push(hit.point.clone()); cum.push(total); objs.push(hit.object); nrms.push(n);
+                let nd;
+                if (hit.object.userData.isGlass) {
+                    passedGlass = true;
+                    if (++glassSteps > maxGlass) break;
+                    const entering = inside !== hit.object;
+                    nd = refractDir(d, n, entering ? 1 / CONFIG.GLASS_IOR : CONFIG.GLASS_IOR);
+                    if (nd) inside = entering ? hit.object : null;
+                    else nd = d.clone().reflect(n);
+                } else {
+                    inside = null;
+                    if (++bounces > maxBounces) break;
+                    nd = d.clone().reflect(n).normalize();
+                }
+                o = hit.point.clone().addScaledVector(nd, 0.004);
+                d = nd;
+            }
+            return { pts, cum, objs, nrms, length: total, passedGlass };
+        }
+
+        // Exact ray/sphere intersection for smooth glass spheres (no faceting, and fast)
+        const _sc = new V3();
+        function sphereRaycast(raycaster, intersects) {
+            const e = this.matrixWorld.elements;
+            const R = this.userData.radius;
+            const ray = raycaster.ray;
+            _sc.set(ray.origin.x - e[12], ray.origin.y - e[13], ray.origin.z - e[14]);
+            const b = _sc.dot(ray.direction);
+            const c = _sc.lengthSq() - R * R;
+            const disc = b * b - c;
+            if (disc < 0) return;
+            const s = Math.sqrt(disc);
+            const both = this.material.side === THREE.DoubleSide;
+            [-b - s, -b + s].forEach((t, i) => {
+                if (i === 1 && !both) return;
+                if (t > raycaster.near && t < raycaster.far) {
+                    intersects.push({ distance: t, point: ray.at(t, new V3()), object: this, face: null });
+                }
+            });
+        }
+
+        // Exact ray/OBB slab test for box meshes (walls, floors, doors, box props, glass panes/cubes).
+        // Returns the entry face (and the exit face when the material is double-sided).
+        const _rInv = new THREE.Matrix4(), _rO = new V3(), _rD = new V3(), _rBs = new THREE.Sphere();
+        function boxRaycast(raycaster, intersects) {
+            const geom = this.geometry;
+            if (!geom.boundingSphere) geom.computeBoundingSphere();
+            _rBs.copy(geom.boundingSphere).applyMatrix4(this.matrixWorld);
+            const ray = raycaster.ray;
+            if (!ray.intersectsSphere(_rBs)) return;
+            _rInv.copy(this.matrixWorld).invert();
+            _rO.copy(ray.origin).applyMatrix4(_rInv);
+            _rD.copy(ray.direction).transformDirection(_rInv);
+            const h = this.userData.half;
+            const o = [_rO.x, _rO.y, _rO.z], d = [_rD.x, _rD.y, _rD.z], hh = [h.x, h.y, h.z];
+            let tmin = -Infinity, tmax = Infinity, aMin = 0, sMin = 0, aMax = 0, sMax = 0;
+            for (let a = 0; a < 3; a++) {
+                if (Math.abs(d[a]) < 1e-12) { if (o[a] < -hh[a] || o[a] > hh[a]) return; continue; }
+                let t1 = (-hh[a] - o[a]) / d[a], t2 = (hh[a] - o[a]) / d[a], s1 = -1, s2 = 1;
+                if (t1 > t2) { const tt = t1; t1 = t2; t2 = tt; s1 = 1; s2 = -1; }
+                if (t1 > tmin) { tmin = t1; aMin = a; sMin = s1; }
+                if (t2 < tmax) { tmax = t2; aMax = a; sMax = s2; }
+                if (tmin > tmax) return;
+            }
+            const push = (t, axis, sign) => {
+                if (t <= raycaster.near || t >= raycaster.far) return;
+                const n = new V3(); n.setComponent(axis, sign);
+                intersects.push({ distance: t, point: ray.at(t, new V3()), object: this, face: { normal: n } });
+            };
+            push(tmin, aMin, sMin);
+            if (this.material.side === THREE.DoubleSide) push(tmax, aMax, sMax);
+        }
+
+        // ---------- emission records ----------
+        const laser = {
+            records: [],
+            colorHistory: [{ t: -1e9, hex: LASER_COLORS[0].hex }],
+            wasEmitting: false,
+            livePath: null,
+            activeHits: [],
+            infoTimer: 0
+        };
+
+        function colorAt(tEmit) {
+            const h = laser.colorHistory;
+            for (let i = h.length - 1; i > 0; i--) if (h[i].t <= tEmit) return h[i].hex;
+            return h[0].hex;
+        }
+
+        const _pa = new V3(), _pb = new V3();
+        function pathPointAt(path, d, out) {
+            const cum = path.cum, pts = path.pts;
+            if (d <= 0) return out.copy(pts[0]);
+            if (d >= path.length) return out.copy(pts[pts.length - 1]);
+            let lo = 0, hi = cum.length - 1;
+            while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (cum[mid] <= d) lo = mid; else hi = mid; }
+            return out.copy(pts[lo]).lerp(pts[hi], (d - cum[lo]) / Math.max(1e-9, cum[hi] - cum[lo]));
+        }
+
+        // Draw the part of `path` between distances a..b, split wherever the emitted color changed
+        function emitPathRange(path, a, b, now, c) {
+            const cum = path.cum, pts = path.pts, h = laser.colorHistory;
+            for (let k = 0; k < pts.length - 1; k++) {
+                const s0 = Math.max(a, cum[k]), s1 = Math.min(b, cum[k + 1]);
+                if (s1 <= s0) continue;
+                const segLen = Math.max(1e-9, cum[k + 1] - cum[k]);
+                const at = (s, out) => out.copy(pts[k]).lerp(pts[k + 1], (s - cum[k]) / segLen);
+                let start = s0;
+                for (let j = h.length - 1; j >= 1; j--) {
+                    const D = (now - h[j].t) * c;
+                    if (D <= start) continue;
+                    if (D >= s1) break;
+                    beamSeg(at(start, _pa), at(D, _pb), colorAt(now - (start + D) * 0.5 / c));
+                    start = D;
+                }
+                beamSeg(at(start, _pa), at(s1, _pb), colorAt(now - (start + s1) * 0.5 / c));
+            }
+        }
+
+        function laserEmitting() {
+            return !state.isFreeMousePaused && state.weapon === 1 &&
+                (state.laserToggleMode ? state.laserToggledOn : state.isFiring);
+        }
+
+        function updateLaser(dt) {
+            const now = state.simTime, c = CONFIG.LASER_SPEED;
+            const curHex = LASER_COLORS[state.laserColorIdx].hex;
+            laserEmitterTip.material.color.setHex(curHex);
+            laserLed.material.color.setHex(curHex);
+
+            const emitting = laserEmitting();
+            if (emitting !== laser.wasEmitting) {
+                playLaserSwitchSound(emitting);
+                if (emitting) startHum(); else stopHum();
+            }
+            laser.wasEmitting = emitting;
+
+            setGlassDoubleSided(true);
+            const recs = laser.records;
+            const last = recs.length ? recs[recs.length - 1] : null;
+            const continuing = !!(last && last.open);
+            const origin = getLaserEmitterOrigin(), aim = getAimDirection();
+            if (emitting) {
+                if (state.laserSpeedMode) {
+                    if (continuing && !last.live && last.ver === worldVersion &&
+                        last.origin.distanceToSquared(origin) < 1e-8 && last.dir.dot(aim) > 0.9999995) {
+                        last.t1 = now;
+                    } else {
+                        if (last) last.open = false;
+                        recs.push({ t0: continuing ? last.t1 : now, t1: now, origin: origin.clone(), dir: aim.clone(),
+                            path: traceBeam(origin, aim), ver: worldVersion, live: false, open: true, contig: continuing });
+                    }
+                } else if (continuing && last.live) {
+                    last.t1 = now;
+                } else {
+                    if (last) last.open = false;
+                    recs.push({ t0: continuing ? last.t1 : now, t1: now, live: true, open: true, contig: continuing, path: null });
+                }
+            } else if (continuing) {
+                last.open = false;
+            }
+
+            laser.livePath = recs.some((r) => r.live) ? traceBeam(origin, aim) : null;
+            let budget = 4;   // frozen (speed-mode) paths are re-traced when the world changes
+            for (let i = recs.length - 1; i >= 0 && budget > 0; i--) {
+                const r = recs[i];
+                if (!r.live && r.ver !== worldVersion) { r.path = traceBeam(r.origin, r.dir); r.ver = worldVersion; budget--; }
+            }
+            setGlassDoubleSided(false);
+
+            // retire records whose last photon has left the path
+            filterInPlace(recs, (r) => {
+                const p = r.live ? laser.livePath : r.path;
+                return r.open || (p && (now - r.t1) * c < p.length);
+            });
+            if (recs.length > 4000) recs.splice(0, recs.length - 4000);
+            const hist = laser.colorHistory;
+            const oldest = recs.length ? recs[0].t0 : now;
+            while (hist.length > 1 && hist[1].t <= oldest) hist.shift();
+
+            // draw + collect the hit points photons are touching right now
+            beamCount = 0;
+            const hits = laser.activeHits;
+            hits.length = 0;
+            for (let i = recs.length - 1; i >= 0; i--) {
+                const r = recs[i];
+                const path = r.live ? laser.livePath : r.path;
+                if (!path) continue;
+                const a = (now - r.t1) * c;
+                const b = Math.min((now - r.t0) * c, path.length);
+                if (b > a) {
+                    emitPathRange(path, a, b, now, c);
+                    for (let k = 1; k < path.pts.length; k++) {
+                        const ck = path.cum[k];
+                        if (ck < a) continue;
+                        if (ck > b) break;
+                        if (path.objs[k]) hits.push({ obj: path.objs[k], point: path.pts[k], normal: path.nrms[k], hex: colorAt(now - ck / c) });
+                    }
+                }
+                if (r.contig && i > 0) {   // wavefront between consecutive emissions
+                    const older = recs[i - 1];
+                    const op = older.live ? laser.livePath : older.path;
+                    const d = (now - r.t0) * c;
+                    if (op && d < path.length && d < op.length) beamSeg(pathPointAt(path, d, _pa), pathPointAt(op, d, _pb), colorAt(r.t0));
+                }
+            }
+            beamFlush();
+            applyBeamHits(hits);
+
+            if (hum.nodes) updateHum(laser.livePath ? laser.livePath.pts.length - 2 : (last && last.path ? last.path.pts.length - 2 : 0));
+            laser.infoTimer -= dt || 1 / 60;
+            if (laser.infoTimer <= 0) {
+                laser.infoTimer = 0.25;
+                const p = laser.livePath || (last && last.path);
+                document.getElementById('beamInfo').textContent = recs.length === 0 ? 'OFF'
+                    : `${p ? p.pts.length - 2 : 0} HITS · ${p ? Math.round(p.length) : 0} m · ${state.laserSpeedMode ? 'SPEED' : 'INSTANT'}${recs.length > 1 ? ' · ' + recs.length + ' REC' : ''}`;
+            }
+        }
+
+        const _camPos = new V3();
+        function applyBeamHits(hits) {
+            camera.getWorldPosition(_camPos);
+            for (const h of hits) {
+                const ud = h.obj.userData;
+                if (ud.glowable) {
+                    if (ud.isGlass && ud.glowTimer <= 0.001) playGlassTink();
+                    ud.glowTimer = CONFIG.GLOW_SUSTAIN + CONFIG.GLOW_FADE;
+                    ud.glowColor = h.hex;
+                }
+                h.dist = h.point.distanceToSquared(_camPos);
+            }
+            hits.sort((x, y) => x.dist - y.dist);
+            const I = state.laserIntensity;
+            let di = 0;
+            for (let i = 0; i < hits.length && di < haloDecals.length; i++) {
+                const h = hits[i];
+                if (h.obj.userData.isGlass) continue;
+                placeDecal(haloDecals[di], h.point, h.normal, 0.16 + 0.1 * Math.min(I, 2), h.hex, Math.min(0.9, 0.25 + 0.5 * I));
+                placeDecal(coreDecals[di], h.point, h.normal, 0.05 + 0.025 * Math.min(I, 2), 0xffffff, Math.min(1, 0.4 + 0.5 * I));
+                di++;
+            }
+            for (let i = di; i < haloDecals.length; i++) { haloDecals[i].visible = false; coreDecals[i].visible = false; }
+            const nLights = activeHitLightCount();
+            for (let i = 0; i < hitLights.length; i++) {
+                const l = hitLights[i], h = hits[i];
+                if (!h || i >= nLights || I <= 0) { parkLight(l); continue; }
+                l.position.copy(h.point).addScaledVector(h.normal, 0.15);
+                l.color.setHex(h.hex);
+                l.intensity = CONFIG.HIT_LIGHT_INTENSITY * I;
+                setLightMaskForPoint(i, l.position);
+            }
+        }
+
+        // Lit objects keep glowing (sustain then fade) and the brightest few cast faint light
+        const _gp = new V3();
+        function updateGlow(dt) {
+            const cand = [];
+            const I = state.laserIntensity;
+            for (let i = 0; i < glowables.length; i++) {
+                const g = glowables[i], ud = g.userData;
+                if (ud.glowTimer > 0) {
+                    ud.glowTimer = Math.max(0, ud.glowTimer - dt);
+                    const k = ud.glowTimer >= CONFIG.GLOW_FADE ? 1 : ud.glowTimer / CONFIG.GLOW_FADE;
+                    g.material.emissive.setHex(ud.glowColor);
+                    g.material.emissiveIntensity = k * (ud.isGlass ? 1.0 : 0.45) * Math.min(1.5, 0.4 + I * 0.6);
+                    if (ud.isGlass) g.material.opacity = 0.26 + k * 0.32;
+                    if (k > 0.02 && !ud.destroyed) cand.push({ g, k });
+                    ud.wasLit = true;
+                } else if (ud.wasLit) {
+                    g.material.emissiveIntensity = 0;
+                    if (ud.isGlass) g.material.opacity = 0.26;
+                    ud.wasLit = false;
+                }
+            }
+            camera.getWorldPosition(_camPos);
+            cand.forEach((cd) => {
+                cd.p = cd.g.getWorldPosition(new V3());
+                cd.score = cd.k / (1 + cd.p.distanceToSquared(_camPos) * 0.01);
+            });
+            cand.sort((a, b) => b.score - a.score);
+            glowLights.forEach((l, i) => {
+                const cd = cand[i];
+                if (!cd || I <= 0) { parkLight(l); return; }
+                l.position.copy(cd.p);
+                l.color.setHex(cd.g.userData.glowColor);
+                l.intensity = CONFIG.GLOW_LIGHT_INTENSITY * cd.k * Math.min(2, I);
+                setLightMaskForPoint(6 + i, l.position);
+            });
+        }
+
+        let doorLightTimer = 0;
+        function updateDoorLights(dt) {
+            doorLightTimer -= dt;
+            if (doorLightTimer > 0) return;
+            doorLightTimer = 0.2;
+            const p = state.player.pos;
+            const sorted = doorEmitters.slice().sort((a, b) => a.pos.distanceToSquared(p) - b.pos.distanceToSquared(p));
+            doorLights.forEach((l, i) => {
+                const e = sorted[i];
+                if (!e) { parkLight(l); return; }
+                l.position.copy(e.pos);
+                l.color.setHex(e.color);
+                l.intensity = CONFIG.DOOR_LIGHT_INTENSITY;
+            });
+        }
+
+        // ==========================================
+        // 7. FLASHLIGHT + GLASS CAUSTICS
+        //    SpotLight (shadowed; glass casts no shadow) for direct light, plus a bundle of
+        //    rays refracted through glass; where they land, additive caustic spots pile up,
+        //    so lenses visibly focus the beam and prisms bend it.
+        // ==========================================
+        function getFlashOrigin() {
+            if (!state.isThirdPerson) {
+                camera.updateMatrixWorld(true);
+                return flLens.getWorldPosition(new V3());
+            }
+            playerAvatar.updateMatrixWorld(true);
+            const clone = tpWeaponHolder.children[0];
+            const lens = clone && clone.getObjectByName('flashLens');
+            return lens ? lens.getWorldPosition(new V3()) : tpWeaponHolder.getWorldPosition(new V3());
+        }
+
+        const _fu = new V3(), _fv = new V3(), _fr = new V3();
+        function updateFlashlight() {
+            const on = state.weapon === 4 && state.flashlightOn;
+            flLens.material.color.setHex(on ? 0xfff4dd : 0x3f3f46);
+            if (!on) {
+                parkLight(flashLight);
+                for (const d of causticDecals) d.visible = false;
+                return;
+            }
+            const origin = getFlashOrigin();
+            const dir = getAimDirection();
+            flashLight.position.copy(origin).addScaledVector(dir, 0.06);
+            flashLight.target.position.copy(origin).addScaledVector(dir, 10);
+            flashLight.target.updateMatrixWorld();
+            flashLight.intensity = CONFIG.FLASH_INTENSITY;
+            updateCaustics(origin, dir);
+        }
+
+        function updateCaustics(origin, dir) {
+            let used = 0;
+            const range = CONFIG.FLASH_RANGE, cone = CONFIG.FLASH_ANGLE * 0.95;
+            // Any glass inside the cone? If not, skip all the ray work.
+            const glassInCone = glassObjects.filter((g) => {
+                if (g.userData.destroyed || g.userData.dead) return false;
+                const p = g.getWorldPosition(new V3()).sub(origin);
+                const dist = p.length();
+                if (dist > range) return false;
+                const rad = (g.userData.radius || 1.4) + 0.2;
+                return Math.acos(Math.min(1, p.dot(dir) / Math.max(dist, 1e-4))) < cone + Math.atan(rad / Math.max(dist, 0.1));
+            });
+            if (glassInCone.length) {
+                // candidate occluders near the player only (cheap pre-filter)
+                const near = [];
+                for (const m of destructibleMeshes) {
+                    if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+                    _bs.copy(m.geometry.boundingSphere).applyMatrix4(m.matrixWorld);
+                    if (_bs.center.distanceTo(origin) - _bs.radius < range) near.push(m);
+                }
+                _fu.set(0, 1, 0);
+                if (Math.abs(dir.y) > 0.95) _fu.set(1, 0, 0);
+                _fv.crossVectors(dir, _fu).normalize();
+                _fu.crossVectors(_fv, dir).normalize();
+                const N = CONFIG.CAUSTIC_RAYS, tanC = Math.tan(cone);
+                setGlassDoubleSided(true);
+                for (let i = 0; i < N && used < causticDecals.length; i++) {
+                    const r = Math.sqrt((i + 0.5) / N) * tanC;    // golden-angle disk = even coverage
+                    const th = i * 2.399963;
+                    _fr.copy(dir).addScaledVector(_fu, Math.cos(th) * r).addScaledVector(_fv, Math.sin(th) * r).normalize();
+                    _ray.set(origin, _fr);
+                    _ray.far = range;
+                    if (_ray.intersectObjects(glassInCone, false).length === 0) continue;
+                    const path = traceBeam(origin, _fr, near, 0, range, 8);
+                    const k = path.pts.length - 1;
+                    if (!path.passedGlass || !path.objs[k] || path.objs[k].userData.isGlass) continue;
+                    const L = path.cum[k];
+                    const fall = Math.max(0, 1 - L / range);
+                    placeDecal(causticDecals[used++], path.pts[k], path.nrms[k], 0.3 + L * 0.06, 0xffe8c4, 0.2 * fall);
+                }
+                setGlassDoubleSided(false);
+            }
+            for (let i = used; i < causticDecals.length; i++) causticDecals[i].visible = false;
+        }
+
+        // ==========================================
+        // 8. PLAYER, COLLISIONS, DOORS & CAMERA
+        // ==========================================
+        const _tempWorldPos = new V3();
+        const _tempQuat = new THREE.Quaternion();
+        const _tempInvQuat = new THREE.Quaternion();
+        const _localPlayer = new V3();
+
+        function resolveHorizontalCollisions(pos, height) {
+            const r = CONFIG.PLAYER_RADIUS;
+            const feetY = pos.y - height, headY = pos.y;
+            for (let i = 0; i < solidColliders.length; i++) {
+                const col = solidColliders[i];
+                if (col.mesh.userData.destroyed) continue;
+                col.mesh.getWorldPosition(_tempWorldPos);
+                col.mesh.getWorldQuaternion(_tempQuat);
+                const he = col.halfExtents;
+                const topY = _tempWorldPos.y + he.y, botY = _tempWorldPos.y - he.y;
+                if (headY <= botY + 0.05 || feetY >= topY - 0.55) continue;   // step up onto low things
+                _tempInvQuat.copy(_tempQuat).invert();
+                _localPlayer.set(pos.x, pos.y - height * 0.5, pos.z).sub(_tempWorldPos).applyQuaternion(_tempInvQuat);
+                const cx = Math.max(-he.x, Math.min(he.x, _localPlayer.x));
+                const cz = Math.max(-he.z, Math.min(he.z, _localPlayer.z));
+                const dx = _localPlayer.x - cx, dz = _localPlayer.z - cz;
+                const distSq = dx * dx + dz * dz;
+                if (distSq < r * r) {
+                    const dist = Math.sqrt(distSq);
+                    const push = new V3();
+                    if (dist > 1e-4) push.set(dx / dist, 0, dz / dist).multiplyScalar(r - dist);
+                    else {
+                        // centre is inside the box: exit through the nearest face
+                        const ox = he.x - Math.abs(_localPlayer.x), oz = he.z - Math.abs(_localPlayer.z);
+                        if (ox < oz) push.set(Math.sign(_localPlayer.x || 1) * (ox + r), 0, 0);
+                        else push.set(0, 0, Math.sign(_localPlayer.z || 1) * (oz + r));
+                    }
+                    push.applyQuaternion(_tempQuat);
+                    pos.x += push.x;
+                    pos.z += push.z;
+                }
+            }
+        }
+
+        function resolveVerticalCollisions(pos, vel, height) {
+            let grounded = false;
+            if (pos.y - height <= 0) { pos.y = height; vel.y = 0; grounded = true; }
+            const r = CONFIG.PLAYER_RADIUS * 0.85;
+            for (let i = 0; i < solidColliders.length; i++) {
+                const col = solidColliders[i];
+                if (col.mesh.userData.destroyed) continue;
+                col.mesh.getWorldPosition(_tempWorldPos);
+                col.mesh.getWorldQuaternion(_tempQuat);
+                _tempInvQuat.copy(_tempQuat).invert();
+                const he = col.halfExtents;
+                _localPlayer.set(pos.x, pos.y, pos.z).sub(_tempWorldPos).applyQuaternion(_tempInvQuat);
+                if (Math.abs(_localPlayer.x) <= he.x + r && Math.abs(_localPlayer.z) <= he.z + r) {
+                    const topY = _tempWorldPos.y + he.y, botY = _tempWorldPos.y - he.y;
+                    const feet = pos.y - height;
+                    if (vel.y <= 0 && feet <= topY && feet >= topY - 0.65) {
+                        pos.y = topY + height; vel.y = 0; grounded = true;
+                    } else if (vel.y > 0 && pos.y >= botY && pos.y <= botY + 0.4) {
+                        pos.y = botY; vel.y = 0;
+                    }
+                }
+            }
+            return grounded;
+        }
+
+        // Is there room above the head to grow from fromH to toH?
+        function canStandUp(pos, fromH, toH) {
+            const feet = pos.y - fromH, newHead = feet + toH;
+            const r = CONFIG.PLAYER_RADIUS * 0.85;
+            for (let i = 0; i < solidColliders.length; i++) {
+                const col = solidColliders[i];
+                if (col.mesh.userData.destroyed) continue;
+                col.mesh.getWorldPosition(_tempWorldPos);
+                const he = col.halfExtents;
+                const botY = _tempWorldPos.y - he.y;
+                if (botY < pos.y - 0.05 || botY > newHead + 0.02) continue;
+                col.mesh.getWorldQuaternion(_tempQuat);
+                _tempInvQuat.copy(_tempQuat).invert();
+                _localPlayer.set(pos.x, pos.y, pos.z).sub(_tempWorldPos).applyQuaternion(_tempInvQuat);
+                if (Math.abs(_localPlayer.x) <= he.x + r && Math.abs(_localPlayer.z) <= he.z + r) return false;
+            }
+            return true;
+        }
+
+        function pushNearbyPeople() {
+            const pPos = state.player.pos, wPos = new V3();
+            let any = false;
+            for (const npc of roomPeople) {
+                npc.mesh.getWorldPosition(wPos);
+                const diff = wPos.clone().sub(pPos);
+                diff.y = 0;
+                const d = diff.length();
+                if (d < CONFIG.PUSH_RADIUS && d > 0.01) {
+                    diff.normalize();
+                    npc.vel.addScaledVector(diff, CONFIG.PUSH_FORCE * (1 - d / CONFIG.PUSH_RADIUS * 0.5));
+                    npc.vel.y = 3.8;
+                    any = true;
+                }
+            }
+            playPushSound();
+            cameraShake = Math.max(cameraShake, any ? 0.05 : 0.025);
+        }
+
+        function updatePeoplePhysics(dt) {
+            for (const npc of roomPeople) {
+                const m = npc.mesh;
+                if (npc.vel.lengthSq() > 1e-4 || m.position.y > npc.baseY) {
+                    npc.vel.y -= CONFIG.GRAVITY * dt;
+                    m.position.addScaledVector(npc.vel, dt);
+                    if (m.position.y <= npc.baseY) { m.position.y = npc.baseY; npc.vel.y = 0; }
+                    if (npc.bounds) {   // stay inside their room (they used to fly through walls)
+                        const b = npc.bounds;
+                        if (Math.abs(m.position.x) > b.hx) { m.position.x = Math.sign(m.position.x) * b.hx; npc.vel.x *= -0.3; }
+                        if (Math.abs(m.position.z) > b.hz) { m.position.z = Math.sign(m.position.z) * b.hz; npc.vel.z *= -0.3; }
+                    }
+                    const damp = Math.exp(-6.5 * dt);
+                    npc.vel.x *= damp;
+                    npc.vel.z *= damp;
+                    if (npc.vel.lengthSq() < 0.001 && m.position.y <= npc.baseY) npc.vel.set(0, 0, 0);
+                }
+            }
+        }
+
+        const _dp = new V3();
+        function interactDoor() {
+            const p = state.player.pos, aim = getAimDirection();
+            let best = null, bestScore = Infinity;
+            for (const d of interactiveDoors) {
+                if (d.slab.userData.destroyed) continue;
+                d.slab.getWorldPosition(_dp);
+                const dx = _dp.x - p.x, dz = _dp.z - p.z;
+                const dist = Math.hypot(dx, dz);
+                if (dist > 4.8) continue;
+                const facing = (dx * aim.x + dz * aim.z) / (dist + 1e-6);
+                if (facing < -0.2 && dist > 1.6) continue;
+                const score = dist - facing * 1.5;
+                if (score < bestScore) { bestScore = score; best = d; }
+            }
+            if (best) {
+                best.isOpen = !best.isOpen;
+                playDoorSound(best.isOpen);
+                worldVersion++;
+                showToast(best.isOpen ? 'DOOR OPENING' : 'DOOR CLOSING');
+            } else {
+                showToast('NO DOOR IN REACH');
+            }
+        }
+
+        function updateInteractiveDoors(dt) {
+            for (const d of interactiveDoors) {
+                const target = d.isOpen ? 1 : 0;
+                if (d.openT === target) continue;
+                const step = dt / CONFIG.DOOR_OPEN_TIME;
+                d.openT = target > d.openT ? Math.min(1, d.openT + step) : Math.max(0, d.openT - step);
+                const e = d.openT * d.openT * (3 - 2 * d.openT);
+                d.slab.position.y = d.baseY - e * (CONFIG.DOOR_HEIGHT - 0.02);   // sinks into the floor
+                if (d.openT === target) worldVersion++;
+            }
+        }
+
+        let weaponRecoil = 0;
+        let cameraShake = 0;
+        const crosshairEl = document.getElementById('crosshair');
+
+        function getAimDirection() {
+            const euler = new THREE.Euler(state.player.pitch, state.player.yaw, 0, 'YXZ');
+            return new V3(0, 0, -1).applyEuler(euler).normalize();
+        }
+
+        function getLaserEmitterOrigin() {
+            if (!state.isThirdPerson) {
+                camera.updateMatrixWorld(true);
+                return laserEmitterTip.getWorldPosition(new V3());
+            }
+            playerAvatar.updateMatrixWorld(true);
+            const clone = tpWeaponHolder.children[0];
+            const tip = clone && clone.getObjectByName('laserLens');
+            return tip ? tip.getWorldPosition(new V3()) : tpWeaponHolder.getWorldPosition(new V3());
+        }
+
+        const aimRaycaster = new THREE.Raycaster();
+        function getAimTargetPoint() {
+            const origin = getLaserEmitterOrigin(), dir = getAimDirection();
+            aimRaycaster.set(origin, dir);
+            aimRaycaster.far = 80;
+            const hits = aimRaycaster.intersectObjects(destructibleMeshes, false);
+            return hits.length > 0 ? hits[0].point.clone() : origin.clone().addScaledVector(dir, 60);
+        }
+
+        function updateCrosshairProjection() {
+            if (!state.isThirdPerson) { crosshairEl.style.left = '50%'; crosshairEl.style.top = '50%'; return; }
+            const projected = getAimTargetPoint().project(camera);
+            if (projected.z < 1) {
+                crosshairEl.style.left = `${(projected.x * 0.5 + 0.5) * window.innerWidth}px`;
+                crosshairEl.style.top = `${(-projected.y * 0.5 + 0.5) * window.innerHeight}px`;
+            }
+        }
+
+        function updateCameraPresentation(dt) {
+            if (state.isResettingCamera) {
+                const k = 1 - Math.exp(-14 * dt);
+                state.tpOrbitYaw += (0 - state.tpOrbitYaw) * k;
+                state.tpOrbitPitch += (0.25 - state.tpOrbitPitch) * k;
+                if (Math.abs(state.tpOrbitYaw) < 0.005 && Math.abs(state.tpOrbitPitch - 0.25) < 0.005) {
+                    state.tpOrbitYaw = 0; state.tpOrbitPitch = 0.25; state.isResettingCamera = false;
+                }
+            }
+            if (state.isLevelingPitch) {
+                state.player.pitch += (0 - state.player.pitch) * (1 - Math.exp(-12 * dt));
+                if (Math.abs(state.player.pitch) < 0.002) { state.player.pitch = 0; state.isLevelingPitch = false; }
+            }
+            const p = state.player;
+            playerAvatar.position.set(p.pos.x, p.pos.y - p.height, p.pos.z);
+            playerAvatar.scale.y = p.height / CONFIG.STAND_HEIGHT;
+            playerAvatar.rotation.y = p.yaw;
+            tpWeaponHolder.rotation.x = p.pitch;
+
+            const shakeX = (Math.random() - 0.5) * cameraShake, shakeY = (Math.random() - 0.5) * cameraShake;
+            cameraShake = Math.max(0, cameraShake - dt * 0.45);
+
+            if (!state.isThirdPerson) {
+                playerAvatar.visible = false;
+                weaponRig.visible = true;
+                const bob = Math.sin(p.bobTimer) * 0.025;
+                camera.position.set(p.pos.x + shakeX, p.pos.y - CONFIG.EYE_OFFSET + bob + shakeY, p.pos.z);
+                camera.rotation.order = 'YXZ';
+                camera.rotation.set(p.pitch, p.yaw, 0);
+                weaponRecoil = Math.max(0, weaponRecoil - dt * 0.7);
+                weaponRig.position.set(0, 0, weaponRecoil);
+                if (state.weapon === 2 && state.isFiring) {
+                    state.minigunSpin += dt * 28;
+                    barrelsGroup.rotation.z = state.minigunSpin;
+                }
+            } else {
+                playerAvatar.visible = true;
+                weaponRig.visible = false;
+                const totalYaw = p.yaw + state.tpOrbitYaw;
+                const totalPitch = Math.max(-0.6, Math.min(1.1, state.tpOrbitPitch));
+                const focus = new V3(p.pos.x, p.pos.y - 0.35, p.pos.z);
+                const offset = new V3(0, 0, state.thirdPersonDist).applyEuler(new THREE.Euler(-totalPitch, totalYaw, 0, 'YXZ'));
+                camera.position.copy(focus).add(offset);
+                camera.position.x += shakeX;
+                camera.position.y += shakeY;
+                camera.lookAt(focus);
+            }
+            updateCrosshairProjection();
+        }
+
+        function updatePlayer(dt) {
+            const p = state.player;
+
+            // Crouch: eased transition over CROUCH_TIME; on the ground the feet stay planted,
+            // in the air the legs tuck up (so crouch-jumping clears higher ledges).
+            const wantCrouch = !!(state.keys['ControlLeft'] || state.keys['ControlRight'] || state.keys['KeyZ']);
+            let target = wantCrouch ? 1 : 0;
+            if (!wantCrouch && p.crouchT > 0 && !canStandUp(p.pos, p.height, CONFIG.STAND_HEIGHT)) target = p.crouchT;
+            const stepT = dt / CONFIG.CROUCH_TIME;
+            p.crouchT = target > p.crouchT ? Math.min(target, p.crouchT + stepT) : Math.max(target, p.crouchT - stepT);
+            const e = p.crouchT * p.crouchT * (3 - 2 * p.crouchT);
+            const newH = CONFIG.STAND_HEIGHT + (CONFIG.CROUCH_HEIGHT - CONFIG.STAND_HEIGHT) * e;
+            if (newH !== p.height) {
+                if (p.onGround) p.pos.y += newH - p.height;
+                p.height = newH;
+            }
+
+            const forward = new V3(-Math.sin(p.yaw), 0, -Math.cos(p.yaw));
+            const right = new V3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
+            const move = new V3();
+            if (state.keys['KeyW']) move.add(forward);
+            if (state.keys['KeyS']) move.sub(forward);
+            if (state.keys['KeyD']) move.add(right);
+            if (state.keys['KeyA']) move.sub(right);
+            const sprint = (state.keys['ShiftLeft'] || state.keys['ShiftRight']) && e < 0.5;
+            if (move.lengthSq() > 0) { move.normalize(); p.bobTimer += dt * (sprint ? 14 : 10) * (1 - 0.4 * e); }
+            else p.bobTimer = 0;
+            const speed = CONFIG.PLAYER_SPEED * (sprint ? CONFIG.SPRINT_MULTIPLIER : 1) * (1 + (CONFIG.CROUCH_SPEED_MULT - 1) * e);
+            p.vel.x = move.x * speed;
+            p.vel.z = move.z * speed;
+
+            // Jump (edge-triggered) + double jump
+            if (p.jumpQueued) {
+                p.jumpQueued = false;
+                if (p.onGround) {
+                    p.vel.y = CONFIG.JUMP_FORCE; p.onGround = false; p.jumpsUsed = 1; playJumpSound(false);
+                } else if (p.jumpsUsed < CONFIG.MAX_JUMPS) {
+                    p.vel.y = CONFIG.DOUBLE_JUMP_FORCE; p.jumpsUsed = Math.max(p.jumpsUsed, 1) + 1; playJumpSound(true);
+                }
+            }
+
+            p.vel.y -= CONFIG.GRAVITY * dt;
+            p.pos.x += p.vel.x * dt;
+            p.pos.z += p.vel.z * dt;
+            resolveHorizontalCollisions(p.pos, p.height);
+            p.pos.y += p.vel.y * dt;
+            p.onGround = resolveVerticalCollisions(p.pos, p.vel, p.height);
+            if (p.onGround) p.jumpsUsed = 0;
+
+            const stance = document.getElementById('stanceIndicator');
+            const label = p.crouchT > 0.5 ? 'CROUCH' : (p.onGround ? 'STAND' : 'AIR');
+            if (stance.textContent !== label) stance.textContent = label;
+
+            updateCameraPresentation(dt);
+        }
+
+        // ==========================================
+        // 9. INPUT, UI & MAIN LOOP
+        // ==========================================
+        const toastEl = document.getElementById('toast');
+        let toastTimer = null;
+        function showToast(msg) {
+            toastEl.textContent = msg;
+            toastEl.style.opacity = '1';
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { toastEl.style.opacity = '0'; }, 1100);
+        }
+
+        function switchWeapon(num) {
+            state.weapon = num;
+            state.isFiring = false;
+            for (let i = 1; i <= 4; i++) {
+                viewModels[i].visible = (i === num);
+                document.getElementById(`slot-${i}`).classList.toggle('active', i === num);
+            }
+            syncThirdPersonWeapon();
+        }
+
+        function cycleLaserColor(dir) {
+            state.laserColorIdx = (state.laserColorIdx + dir + LASER_COLORS.length) % LASER_COLORS.length;
+            const col = LASER_COLORS[state.laserColorIdx];
+            laser.colorHistory.push({ t: state.simTime, hex: col.hex });   // new color travels down the beam
+            document.getElementById('laserColorName').textContent = col.name;
+            const dot = document.getElementById('laserColorDot');
+            dot.style.backgroundColor = col.css;
+            dot.style.boxShadow = `0 0 8px ${col.css}`;
+            if (laser.wasEmitting) blip('sine', col.note * 2, col.note * 2, 0.08, 0.02);
+        }
+
+        function setSpeedMode(on) {
+            state.laserSpeedMode = on;
+            document.getElementById('speedModeToggle').checked = on;
+            showToast(on ? 'BEAM: FOLLOWS AIM AT LASER SPEED' : 'BEAM: SNAPS TO AIM INSTANTLY');
+        }
+
+        function setLaserTriggerMode(toggle) {
+            state.laserToggleMode = toggle;
+            state.laserToggledOn = false;
+            state.isFiring = false;
+            const b = document.getElementById('laserModeBadge');
+            b.textContent = toggle ? 'TOGGLE' : 'HOLD';
+            b.className = toggle ? 'text-amber-300' : 'text-emerald-300';
+        }
+
+        const playHint = document.getElementById('playHint');
+        function refreshHint() {
+            playHint.style.display = (state.isLocked || state.isFreeMousePaused) ? 'none' : 'block';
+        }
+
+        function toggleFreeMouseAndStop() {
+            state.isFreeMousePaused = !state.isFreeMousePaused;
+            const badge = document.getElementById('freeMouseBadge');
+            if (state.isFreeMousePaused) {
+                state.isFiring = false;
+                badge.textContent = 'FREE (PAUSED)';
+                badge.className = 'text-amber-300';
+                if (document.pointerLockElement === canvas) document.exitPointerLock();
+            } else {
+                badge.textContent = 'LOCKED';
+                badge.className = 'text-zinc-200';
+                canvas.requestPointerLock();
+            }
+            refreshHint();
+        }
+
+        function requestGameLock() {
+            ensureAudio();
+            state.isFreeMousePaused = false;
+            document.getElementById('freeMouseBadge').textContent = 'LOCKED';
+            document.getElementById('freeMouseBadge').className = 'text-zinc-200';
+            canvas.requestPointerLock();
+        }
+
+        document.addEventListener('pointerlockchange', () => {
+            state.isLocked = (document.pointerLockElement === canvas);
+            if (!state.isLocked) state.isFiring = false;
+            refreshHint();
+        });
+
+        const settingsPanel = document.getElementById('settingsPanel');
+        const settingsShowBtn = document.getElementById('settingsShowBtn');
+        const hotkeysPanel = document.getElementById('hotkeysPanel');
+        function toggleSettings() {
+            const hide = !settingsPanel.classList.contains('hidden-ui');
+            settingsPanel.classList.toggle('hidden-ui', hide);
+            settingsShowBtn.classList.toggle('hidden-ui', !hide);
+        }
+        function toggleHotkeys() { hotkeysPanel.classList.toggle('hidden-ui'); }
+        document.getElementById('settingsHideBtn').addEventListener('click', toggleSettings);
+        settingsShowBtn.addEventListener('click', toggleSettings);
+
+        document.getElementById('fullscreenBtn').addEventListener('click', async () => {
+            try {
+                if (!document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen();
+                    // In fullscreen the Keyboard Lock API can capture Ctrl+W etc., so Ctrl-crouch can't close the tab
+                    if (navigator.keyboard && navigator.keyboard.lock) await navigator.keyboard.lock();
+                    showToast('FULLSCREEN · HOLD ESC TO EXIT');
+                } else {
+                    await document.exitFullscreen();
+                }
+            } catch (err) {
+                showToast('FULLSCREEN UNAVAILABLE');
+            }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            const code = e.code;
+            const isCtrl = code === 'ControlLeft' || code === 'ControlRight';
+            // Block browser shortcuts while crouching (Ctrl+S, Ctrl+D...). Ctrl+W/T/N can only be blocked in fullscreen.
+            if (e.ctrlKey || isCtrl || code === 'Space' || code === 'CapsLock' || code === 'Tab') e.preventDefault();
+            state.keys[code] = true;
+            if (e.repeat) return;
+            switch (code) {
+                case 'Digit1': switchWeapon(1); break;
+                case 'Digit2': switchWeapon(2); break;
+                case 'Digit3': switchWeapon(3); break;
+                case 'Digit4': switchWeapon(4); playClickSound(true); break;
+                case 'Space': state.player.jumpQueued = true; break;
+                case 'KeyC':
+                    state.isThirdPerson = !state.isThirdPerson;
+                    if (state.isThirdPerson) { state.tpOrbitYaw = 0; state.tpOrbitPitch = 0.25; state.isResettingCamera = false; }
+                    document.getElementById('viewIndicator').textContent = state.isThirdPerson ? '3P' : '1P';
+                    break;
+                case 'KeyX': toggleFreeMouseAndStop(); break;
+                case 'KeyV': setLaserTriggerMode(!state.laserToggleMode); break;
+                case 'KeyB': setSpeedMode(!state.laserSpeedMode); break;
+                case 'KeyF': interactDoor(); break;
+                case 'KeyT':
+                    if (state.isThirdPerson) state.isResettingCamera = true;
+                    else state.isLevelingPitch = true;
+                    break;
+                case 'CapsLock': pushNearbyPeople(); break;
+                case 'KeyE': case 'KeyG': cycleLaserColor(1); break;
+                case 'KeyQ': cycleLaserColor(-1); break;
+                case 'KeyH': toggleHotkeys(); break;
+                case 'KeyJ': toggleSettings(); break;
+            }
+        });
+        window.addEventListener('keyup', (e) => { state.keys[e.code] = false; });
+        window.addEventListener('blur', () => { state.keys = {}; state.isFiring = false; });
+
+        window.addEventListener('contextmenu', (e) => { if (e.target === canvas) e.preventDefault(); });
+
+        window.addEventListener('mousedown', (e) => {
+            if (e.target !== canvas) return;            // clicks on UI panels
+            ensureAudio();
+            if (e.button === 1) {
+                e.preventDefault();
+                state.isMiddleMouseDown = true;
+                state.isResettingCamera = false;
+                return;
+            }
+            if (state.isFreeMousePaused) return;
+            if (!state.isLocked) { requestGameLock(); return; }   // first click only captures the mouse
+            if (e.button === 2) { cycleLaserColor(1); return; }
+            if (e.button !== 0) return;
+            if (state.weapon === 1) {
+                if (state.laserToggleMode) state.laserToggledOn = !state.laserToggledOn;
+                else state.isFiring = true;
+            } else if (state.weapon === 4) {
+                state.flashlightOn = !state.flashlightOn;
+                playClickSound(state.flashlightOn);
+            } else {
+                state.isFiring = true;
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 1) state.isMiddleMouseDown = false;
+            if (e.button === 0) state.isFiring = false;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (state.isMiddleMouseDown && state.isThirdPerson) {
+                state.isResettingCamera = false;
+                state.tpOrbitYaw -= e.movementX * CONFIG.MOUSE_SENSITIVITY * 1.3;
+                state.tpOrbitPitch = Math.max(-0.6, Math.min(1.1, state.tpOrbitPitch + e.movementY * CONFIG.MOUSE_SENSITIVITY * 1.3));
+                return;
+            }
+            if (!state.isLocked || state.isFreeMousePaused) return;
+            if (e.movementY !== 0) state.isLevelingPitch = false;
+            state.player.yaw -= e.movementX * CONFIG.MOUSE_SENSITIVITY;
+            state.player.pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, state.player.pitch - e.movementY * CONFIG.MOUSE_SENSITIVITY));
+        });
+
+        window.addEventListener('wheel', (e) => {
+            if (e.ctrlKey) { e.preventDefault(); return; }
+            if (state.isThirdPerson) state.thirdPersonDist = Math.max(2.0, Math.min(14.0, state.thirdPersonDist + e.deltaY * 0.005));
+        }, { passive: false });
+
+        // ---------- sliders ----------
+        function bindSlider(id, valueId, onInput, onChange) {
+            const el = document.getElementById(id), out = document.getElementById(valueId);
+            el.addEventListener('input', () => { out.textContent = onInput(parseInt(el.value, 10)); });
+            if (onChange) el.addEventListener('change', () => onChange(parseInt(el.value, 10)));
+            el.addEventListener('keydown', (ev) => ev.stopPropagation());   // arrow keys adjust the slider, not the game
+        }
+        bindSlider('bounceSlider', 'bounceValue', (v) => { state.laserBounces = v; worldVersion++; return `${v}`; });
+        bindSlider('speedSlider', 'speedValue', (v) => { CONFIG.LASER_SPEED = v; return `${v} m/s`; });
+        bindSlider('intensitySlider', 'intensityValue', (v) => { state.laserIntensity = v / 100; return `${v}%`; });
+        bindSlider('iorSlider', 'iorValue', (v) => { CONFIG.GLASS_IOR = v / 100; worldVersion++; return (v / 100).toFixed(2); });
+        bindSlider('densitySlider', 'densityValue', (v) => `${v}%`, (v) => {
+            CONFIG.DENSITY = v / 100;
+            regenerateWorld();
+            showToast(`DENSITY ${v}% · ROOMS REBUILT`);
+        });
+        bindSlider('dayNightSlider', 'dayNightValue', (v) => { state.dayNight = v / 100; applyEnvironmentLighting(); return `${v}%`; });
+        const QL = { 1: 'LOW', 2: 'MEDIUM', 3: 'HIGH' };
+        bindSlider('lightingSlider', 'lightingValue', (v) => { state.lightingQuality = v; applyLightingQuality(); return QL[v]; });
+        bindSlider('textureSlider', 'textureValue', (v) => {
+            state.textureQuality = v;
+            rebuildTextures(v);
+            ['wall', 'floor', 'ceil', 'door'].forEach((k) => { MAT[k].map = TEX[k]; MAT[k].needsUpdate = true; });
+            scene.traverse((o) => {
+                if (o.isMesh && o.material && o.material.userData && o.material.userData.surface === 'prop') {
+                    o.material.map = TEX.prop;
+                    o.material.needsUpdate = true;
+                }
+            });
+            return QL[v];
+        });
+        document.getElementById('speedModeToggle').addEventListener('change', (e) => setSpeedMode(e.target.checked));
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            updateBeamResolution();
+        });
+
+        // ---------- main loop ----------
+        let lastTime = performance.now();
+        let fpsFrames = 0, fpsLastCheck = performance.now();
+        const fpsCounterEl = document.getElementById('fpsCounter');
+
+        function animate(now) {
+            requestAnimationFrame(animate);
+            const dt = Math.min((now - lastTime) / 1000, 0.05);
+            lastTime = now;
+
+            fpsFrames++;
+            if (now - fpsLastCheck >= 250) {
+                const fps = Math.round((fpsFrames * 1000) / (now - fpsLastCheck));
+                fpsCounterEl.textContent = fps;
+                fpsCounterEl.className = 'mono text-sm font-bold ' + (fps >= 100 ? 'text-emerald-400' : fps >= 55 ? 'text-amber-300' : 'text-red-400');
+                fpsFrames = 0;
+                fpsLastCheck = now;
+            }
+
+            updateProceduralRooms();
+            pumpGeneration(3);
+            const paused = state.isFreeMousePaused;
+            if (!paused) {
+                state.simTime += dt;
+                updatePlayer(dt);
+                updatePeoplePhysics(dt);
+                if (state.fireCooldown > 0) state.fireCooldown -= dt;
+                if (state.isFiring && (state.weapon === 2 || state.weapon === 3) && state.fireCooldown <= 0) fireWeapon();
+                updateProjectiles(dt);
+            } else {
+                updateCameraPresentation(dt);
+            }
+            updateInteractiveDoors(dt);
+            updateLaser(paused ? 0 : dt);
+            updateGlow(paused ? 0 : dt);
+            updateFlashlight();
+            updateDoorLights(dt);
+            renderer.render(scene, camera);
+        }
+
+        applyLightingQuality();
+        updateBeamResolution();
+        refreshHint();
+        window.onload = function () {
+            updateProceduralRooms(true);
+            lastTime = performance.now();
+            requestAnimationFrame(animate);
+        };
+    </script>
+</body>
+</html>
